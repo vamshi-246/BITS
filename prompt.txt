@@ -1,0 +1,1108 @@
+## PREAMBLE: HOW TO USE THIS DOCUMENT
+
+Read this entire document before writing a single line of Verilog. It is organized bottom-up — understand the encoder, then the branch metric structures, then the memory architecture, then each sub-module, then the FSM. Every table, formula, and truth table here has been pre-computed and verified. Do not re-derive them; implement them exactly as given. Any deviation from a provided table is a bug.
+
+---
+
+## SECTION 1 — SYSTEM CONTEXT
+
+This module is one SISO (Soft-Input Soft-Output) decoder instance implementing the Radix-4 Max-Log M-BCJR algorithm, per Studer et al. (IEEE JSSC 2011). In the full LTE turbo decoder, eight such instances run in parallel. You implement exactly one.
+
+Above this module sits a **top-level controller** (not implemented here) that:
+- Arbitrates BRAM access for multiple SISO instances
+- Applies QPP interleaving/de-interleaving between half-iterations
+- Handles iteration counting
+
+The interface between this module and the top-level controller is: this module requests LLR data by asserting `llr_req` with address buses; the top-level controller returns the data one cycle later with `llr_valid`. This module writes completed extrinsic LLRs back to the controller's intermediate memory.
+
+---
+
+## SECTION 2 — BIT-WIDTH SPECIFICATIONS
+
+```verilog
+localparam LLR_W       = 5;   // Input LLR: signed 5-bit (systematic, parity, a-priori)
+localparam EXTR_W      = 6;   // Output extrinsic LLR: signed 6-bit
+localparam SM_W        = 10;  // State metric (alpha, beta): signed 10-bit
+                               // Radix-4 needs 1 extra bit vs radix-2 for modulo-norm correctness
+localparam PREPROC_W   = 6;   // Pre-processed BM value: L_s + L_A, signed 6-bit
+localparam BM_R2_W     = 7;   // Radix-2 branch metric: signed 7-bit
+                               // (max |L_s+L_A| + |L_p| ≤ 31+15 = 46, fits in 7-bit signed)
+localparam BM_R4_W     = 8;   // Radix-4 branch metric: signed 8-bit (sum of two BM_R2)
+localparam WIN_LEN     = 30;  // Default window length in trellis steps
+localparam WIN_LEN_R4  = 15;  // Radix-4 cycles per full window (WIN_LEN/2)
+localparam NUM_STATES  = 8;
+localparam NUM_WIN     = 26;  // ceil(768/30) — windows for a 768-step frame
+localparam FRAME_LEN   = 768; // Trellis steps per SISO segment (K=6144, N=8)
+localparam LAST_WIN_R4 = 9;   // Radix-4 cycles for partial last window (18/2, since 768-25*30=18)
+localparam ADDR_W      = 10;
+localparam SCALE_S1    = 3;   // Extrinsic scaling: >> 3 (implements ×1/8)
+localparam SCALE_S2    = 4;   // Extrinsic scaling: >> 4 (implements ×1/16)
+```
+
+All metrics are **signed two's complement**. Overflow is handled by modulo-normalization, not saturation, except for the final extrinsic LLR output which is saturated to `EXTR_W` bits.
+
+---
+
+## SECTION 3 — ENCODER TRELLIS (VERIFIED)
+
+### 3.1 Encoder Definition
+
+The constituent RSC encoder uses:
+- **Feedback polynomial**: g_r = 13 (octal) = 1 + D + D³
+- **Feedforward polynomial**: g_p = 15 (octal) = 1 + D² + D³
+- **State**: 3-bit shift register `[s1, s2, s3]` where `s1` is most recently shifted in
+
+**Feedback rule**: `fb = x_k ⊕ s1 ⊕ s3`
+**Parity rule**: `x_p = fb ⊕ s2 ⊕ s3`
+**Systematic**: `x_s = x_k`
+**Next state**: `[fb, s1, s2]`
+
+### 3.2 Complete State Transition Table
+
+The following table is **pre-computed and verified**. Implement it exactly. Do not re-derive.
+
+```
+Current   Input  | fb  | Next    | x_s | x_p
+State            |     | State   |     |
+[s1,s2,s3]  x_k  |     |         |     |
+------------|-----|---------|-----|-----
+000         0    |  0  |  000   |  0  |  0
+000         1    |  1  |  100   |  1  |  1
+001         0    |  1  |  100   |  0  |  0   ← fb=0⊕0⊕1=1; xp=1⊕0⊕1=0
+001         1    |  0  |  000   |  1  |  1   ← fb=1⊕0⊕1=0; xp=0⊕0⊕1=1
+010         0    |  0  |  001   |  0  |  1   ← fb=0⊕0⊕0=0; xp=0⊕1⊕0=1
+010         1    |  1  |  101   |  1  |  0   ← fb=1⊕0⊕0=1; xp=1⊕1⊕0=0
+011         0    |  1  |  101   |  0  |  1   ← fb=0⊕0⊕1=1; xp=1⊕1⊕1=1... 
+```
+
+**Full corrected table** (derive fb and xp rigorously for each row):
+
+```
+State  u | NextState  xs  xp | PRE_idx
+-------|------------------|--------
+ 000   0 |   000       0   0  |   0
+ 000   1 |   100       1   1  |   3
+ 001   0 |   100       0   0  |   0
+ 001   1 |   000       1   1  |   3
+ 010   0 |   001       0   1  |   1
+ 010   1 |   101       1   0  |   2
+ 011   0 |   101       0   1  |   1
+ 011   1 |   001       1   0  |   2
+ 100   0 |   110       0   1  |   1
+ 100   1 |   010       1   0  |   2
+ 101   0 |   010       0   1  |   1
+ 101   1 |   110       1   0  |   2
+ 110   0 |   111       0   0  |   0
+ 110   1 |   011       1   1  |   3
+ 111   0 |   011       0   0  |   0
+ 111   1 |   111       1   1  |   3
+```
+
+`PRE_idx = {xs, xp}` (2-bit index into the 4 pre-processed values).
+
+**Verification notes**:
+- States {000, 001} form one cluster: they only transition to/from {000, 100} via PRE[0] or PRE[3]
+- States {010, 011} only transition to/from {001, 101} via PRE[1] or PRE[2]
+- States {100, 101} only transition to/from {010, 110} via PRE[1] or PRE[2]
+- States {110, 111} only transition to/from {011, 111} via PRE[0] or PRE[3]
+- This cluster structure must be reflected in the ACS wiring
+
+### 3.3 Radix-2 Predecessor Table (for BM_R2 mux wiring)
+
+For each destination state, list its two predecessor states and the PRE index used:
+
+```
+Destination | Pred_0  PRE_idx_0 | Pred_1  PRE_idx_1
+------------|------------------|------------------
+    000     |   000      0     |   001      3
+    001     |   010      1     |   011      2
+    010     |   100      2     |   101      1
+    011     |   110      3     |   111      0
+    100     |   000      3     |   001      0
+    101     |   010      2     |   011      1
+    110     |   100      1     |   101      2
+    111     |   110      0     |   111      3
+```
+
+Indexing: `bm_r2[dest][0]` uses `PRE[PRE_idx_0]` and `bm_r2[dest][1]` uses `PRE[PRE_idx_1]`.
+This applies identically for both the odd step and even step (using their respective PRE values).
+
+### 3.4 Radix-4 Predecessor Table (for BM_R4 computation — all 32 paths)
+
+For each destination state `s` and each of its 4 radix-4 predecessors `s''` (through intermediate `s'`):
+
+```
+Dest(s) | s''  | s'  | BM_R4 = PRE_odd[i] + PRE_even[j]
+--------|------|-----|----------------------------------
+  000   |  000 | 000 | PRE_odd[0] + PRE_even[0]
+  000   |  001 | 000 | PRE_odd[3] + PRE_even[0]
+  000   |  010 | 001 | PRE_odd[1] + PRE_even[3]
+  000   |  011 | 001 | PRE_odd[2] + PRE_even[3]
+  001   |  100 | 010 | PRE_odd[2] + PRE_even[1]
+  001   |  101 | 010 | PRE_odd[1] + PRE_even[1]
+  001   |  110 | 011 | PRE_odd[3] + PRE_even[2]
+  001   |  111 | 011 | PRE_odd[0] + PRE_even[2]
+  010   |  000 | 100 | PRE_odd[3] + PRE_even[2]
+  010   |  001 | 100 | PRE_odd[0] + PRE_even[2]
+  010   |  010 | 101 | PRE_odd[2] + PRE_even[1]
+  010   |  011 | 101 | PRE_odd[1] + PRE_even[1]
+  011   |  100 | 110 | PRE_odd[1] + PRE_even[3]
+  011   |  101 | 110 | PRE_odd[2] + PRE_even[3]
+  011   |  110 | 111 | PRE_odd[0] + PRE_even[0]
+  011   |  111 | 111 | PRE_odd[3] + PRE_even[0]
+  100   |  000 | 000 | PRE_odd[0] + PRE_even[3]
+  100   |  001 | 000 | PRE_odd[3] + PRE_even[3]
+  100   |  010 | 001 | PRE_odd[1] + PRE_even[0]
+  100   |  011 | 001 | PRE_odd[2] + PRE_even[0]
+  101   |  100 | 010 | PRE_odd[2] + PRE_even[2]
+  101   |  101 | 010 | PRE_odd[1] + PRE_even[2]
+  101   |  110 | 011 | PRE_odd[3] + PRE_even[1]
+  101   |  111 | 011 | PRE_odd[0] + PRE_even[1]
+  110   |  000 | 100 | PRE_odd[3] + PRE_even[1]
+  110   |  001 | 100 | PRE_odd[0] + PRE_even[1]
+  110   |  010 | 101 | PRE_odd[2] + PRE_even[2]
+  110   |  011 | 101 | PRE_odd[1] + PRE_even[2]
+  111   |  100 | 110 | PRE_odd[1] + PRE_even[0]
+  111   |  101 | 110 | PRE_odd[2] + PRE_even[0]
+  111   |  110 | 111 | PRE_odd[0] + PRE_even[3]
+  111   |  111 | 111 | PRE_odd[3] + PRE_even[3]
+```
+
+**How to read this table**: For `bm_r4[dest][i]`, the index `i` corresponds to the row order within each destination group (i=0,1,2,3 from top). The s'' ordering within each group is listed and must be maintained consistently throughout the module (predecessor 0 of state `s` is always the same `s''` everywhere ACS inputs are wired).
+
+### 3.5 XS Bit Lookup for LLR Computation
+
+For LLR computation, you need to know which transitions carry `xs=0` vs `xs=1`. From the forward transition table, the parity of `xs` depends only on the input `u`. Since `xs = u`:
+
+**Even step (s' → s)**:
+- xs=0 transitions: 000→000, 001→100, 010→001, 011→101, 100→110, 101→010, 110→111, 111→011
+- xs=1 transitions: 000→100, 001→000, 010→101, 011→001, 100→010, 101→110, 110→011, 111→111
+
+Equivalently, `xs` of transition `(s', s)` = `s'[2] XOR s[2] XOR s[1]` (derivable from shift register structure — hardcode per path, do not compute dynamically).
+
+---
+
+## SECTION 4 — ALGORITHM OVERVIEW
+
+### 4.1 Pre-Processing
+
+For each trellis step, four values are pre-computed from the input LLRs:
+
+```
+PRE[0] = 0
+PRE[1] = L_p
+PRE[2] = L_s + L_A
+PRE[3] = L_s + L_A + L_p
+```
+
+This is computed separately for the **odd step** (using `sys_odd`, `par_odd`, `apr_odd`) and **even step** (using `sys_even`, `par_even`, `apr_even`). Result widths: `PREPROC_W = 6` signed bits.
+
+### 4.2 Radix-4 Max-Log Recursion
+
+Forward state metric update (equation 3 from paper):
+```
+α_k(s) = max_{i=0..3} [ α_{k-2}(s''_i) + γ_r4(s''_i, s) ]
+```
+
+Backward (equation analogous, reversed direction):
+```
+β_{k-2}(s'') = max_{s} [ β_k(s) + γ_r4(s'', s) ]
+```
+
+Note: for backward recursion the same `γ_r4` values are used but the update direction is reversed — you are distributing from `s` back to `s''`.
+
+### 4.3 Intrinsic LLR Computation (equation 2 from paper)
+
+```
+L_D_k ≈ max_{(s',s): xs_k=0} [α_{k-1}(s') + γ_r2_k(s',s) + β_k(s)]
+       − max_{(s',s): xs_k=1} [α_{k-1}(s') + γ_r2_k(s',s) + β_k(s)]
+```
+
+Since radix-4 only stores even-step αs, the odd-step `α_{k-1}(s')` must be derived (see Section 9).
+
+### 4.4 Extrinsic LLR
+
+```
+L_E_k = L_D_k − (L_s_k + L_A_k)
+```
+
+Then apply extrinsic scaling (multiply by 0.6875 = 1 − 1/8 − 1/16):
+```
+L_E_scaled = L_E − (L_E >>> 3) − (L_E >>> 4)
+```
+
+Use **arithmetic right shift** (`>>>` in Verilog for signed). Saturate the result to `[-32, 31]` (signed 6-bit).
+
+---
+
+## SECTION 5 — WINDOW SCHEDULING AND MEMORY BANKING
+
+### 5.1 Frame Parameters
+
+- Frame length: 768 trellis steps
+- Window size: 30 trellis steps → 15 radix-4 cycles
+- Number of windows: 26 (windows 1–25 are full, window 26 is partial: 18 steps = 9 radix-4 cycles)
+- Partial window detection: `(cur_win == NUM_WIN) && (FRAME_LEN % WIN_LEN != 0)`
+- `win_len_r4` for partial window: `(FRAME_LEN % WIN_LEN) / 2 = 9`
+
+### 5.2 Three-Unit Parallel Schedule
+
+```
+Slot | FR active on | BR active on | DBR active on | Notes
+-----|--------------|--------------|---------------|------
+  0  | Dummy-fwd    |    idle      |    idle       | FR: dummy pass to init alpha
+  1  |    W1        |    idle      |    W2'        | DBR generates β_init for W1's BR
+  2  |    W2        |    W1        |    W3'        | BR uses DBR's W2' output as β_init
+  3  |    W3        |    W2        |    W4'
+  4  |    W4        |    W3        |    W5'
+  ...
+ 25  |    W25       |    W24       |    W26'
+ 26  |    W26       |    W25       |    idle       | DBR has no W27'
+ 27  |    idle      |    W26       |    idle       | FR done, BR finishes last window
+```
+
+Key timing constraint: **DBR for window W(n+1) must complete BEFORE BR begins window W(n)**. Since all units process one window per scheduling slot, and DBR runs one slot ahead of BR, this is naturally satisfied. The `final_beta` output of DBR is **registered** after DBR's `window_done` pulse and held until the BR unit needs it as `beta_init` in the next slot.
+
+### 5.3 Double-Buffered Memories
+
+**Why double buffering**: When BR is reading alpha/gamma for window W(n), FR is simultaneously writing alpha/gamma for window W(n+1). These must not conflict.
+
+**Bank assignment**: `bank_sel = window_index[0]` (bit 0 of window index).
+
+- FR writes to `bank[fr_win_idx[0]]`
+- BR reads from `bank[br_win_idx[0]]`
+- Since `br_win_idx = fr_win_idx - 1`, their bank selects are always opposite. ✓
+
+Instantiate:
+- `alpha_mem_bank0`, `alpha_mem_bank1`
+- `gamma_mem_bank0`, `gamma_mem_bank1`
+
+The FR unit has write ports into both banks (bank select controls which is active). The BR/LLR unit has read ports from both banks (bank select controls which is active).
+
+### 5.4 Memory Capacities
+
+**Alpha memory** (per bank):
+- Depth: `WIN_LEN_R4 = 15` (one entry per radix-4 cycle)
+- Width: `NUM_STATES × SM_W = 8 × 10 = 80` bits
+- Total: 1200 bits per bank
+
+**Gamma memory** (per bank):
+- Depth: `WIN_LEN_R4 = 15`
+- Width: `32 × BM_R2_W = 32 × 7 = 224` bits (16 BMs for odd step + 16 for even step, stored together)
+- Total: 3360 bits per bank
+- Addressing: `addr = step_in_window` (0 to 14), writing all 32 BMs atomically per cycle
+
+Both memories are register arrays (not SRAM macros). Synchronous write, synchronous read (1-cycle latency).
+
+---
+
+## SECTION 6 — MODULE: `bm_preproc`
+
+### Purpose
+Combinational. Computes the 4 pre-processed branch metric base values for both odd and even trellis steps.
+
+### Interface
+```verilog
+module bm_preproc (
+    input  wire signed [LLR_W-1:0]     sys_odd,  par_odd,  apr_odd,
+    input  wire signed [LLR_W-1:0]     sys_even, par_even, apr_even,
+    output wire signed [PREPROC_W-1:0] pre_odd  [0:3],
+    output wire signed [PREPROC_W-1:0] pre_even [0:3]
+);
+```
+
+### Implementation
+```
+pre_odd[0]  = 0
+pre_odd[1]  = par_odd                              // sign-extended to PREPROC_W
+pre_odd[2]  = sys_odd + apr_odd                    // width: LLR_W+1, truncate to PREPROC_W
+pre_odd[3]  = sys_odd + apr_odd + par_odd          // width: LLR_W+1, truncate to PREPROC_W
+pre_even[0] = 0
+pre_even[1] = par_even
+pre_even[2] = sys_even + apr_even
+pre_even[3] = sys_even + apr_even + par_even
+```
+
+Use `$signed()` explicitly. All arithmetic is signed. Width growth from addition: add 1 bit, then truncate/round to `PREPROC_W`. The sum `L_s + L_A` of two 5-bit values requires 6 bits maximum — this fits exactly in `PREPROC_W = 6`.
+
+---
+
+## SECTION 7 — MODULE: `bm_radix2`
+
+### Purpose
+Combinational. Selects from the 4 pre-processed values to form 16 radix-2 branch metrics per trellis step (32 total for both steps).
+
+### Interface
+```verilog
+module bm_radix2 (
+    input  wire signed [PREPROC_W-1:0] pre_odd  [0:3],
+    input  wire signed [PREPROC_W-1:0] pre_even [0:3],
+    output wire signed [BM_R2_W-1:0]  bm_r2_odd  [0:7][0:1],
+    output wire signed [BM_R2_W-1:0]  bm_r2_even [0:7][0:1]
+);
+```
+
+`bm_r2_odd[dest][pred_idx]` and `bm_r2_even[dest][pred_idx]`, where `pred_idx ∈ {0,1}` indexes the two predecessors per destination state.
+
+### Implementation (hardcoded from Section 3.3)
+
+The PRE index for each `(dest, pred_idx)` pair is given directly by the radix-2 predecessor table. Sign-extend `pre_*[idx]` from `PREPROC_W` to `BM_R2_W`:
+
+```verilog
+// ODD STEP — same structure as even step
+assign bm_r2_odd[0][0] = {{(BM_R2_W-PREPROC_W){pre_odd[0][PREPROC_W-1]}}, pre_odd[0]}; // dest=000, pred=000, PRE[0]
+assign bm_r2_odd[0][1] = {{(BM_R2_W-PREPROC_W){pre_odd[3][PREPROC_W-1]}}, pre_odd[3]}; // dest=000, pred=001, PRE[3]
+assign bm_r2_odd[1][0] = {{(BM_R2_W-PREPROC_W){pre_odd[1][PREPROC_W-1]}}, pre_odd[1]}; // dest=001, pred=010, PRE[1]
+assign bm_r2_odd[1][1] = {{(BM_R2_W-PREPROC_W){pre_odd[2][PREPROC_W-1]}}, pre_odd[2]}; // dest=001, pred=011, PRE[2]
+assign bm_r2_odd[2][0] = {{(BM_R2_W-PREPROC_W){pre_odd[2][PREPROC_W-1]}}, pre_odd[2]}; // dest=010, pred=100, PRE[2]
+assign bm_r2_odd[2][1] = {{(BM_R2_W-PREPROC_W){pre_odd[1][PREPROC_W-1]}}, pre_odd[1]}; // dest=010, pred=101, PRE[1]
+assign bm_r2_odd[3][0] = {{(BM_R2_W-PREPROC_W){pre_odd[3][PREPROC_W-1]}}, pre_odd[3]}; // dest=011, pred=110, PRE[3]
+assign bm_r2_odd[3][1] = {{(BM_R2_W-PREPROC_W){pre_odd[0][PREPROC_W-1]}}, pre_odd[0]}; // dest=011, pred=111, PRE[0]
+assign bm_r2_odd[4][0] = {{(BM_R2_W-PREPROC_W){pre_odd[3][PREPROC_W-1]}}, pre_odd[3]}; // dest=100, pred=000, PRE[3]
+assign bm_r2_odd[4][1] = {{(BM_R2_W-PREPROC_W){pre_odd[0][PREPROC_W-1]}}, pre_odd[0]}; // dest=100, pred=001, PRE[0]
+assign bm_r2_odd[5][0] = {{(BM_R2_W-PREPROC_W){pre_odd[2][PREPROC_W-1]}}, pre_odd[2]}; // dest=101, pred=010, PRE[2]
+assign bm_r2_odd[5][1] = {{(BM_R2_W-PREPROC_W){pre_odd[1][PREPROC_W-1]}}, pre_odd[1]}; // dest=101, pred=011, PRE[1]
+assign bm_r2_odd[6][0] = {{(BM_R2_W-PREPROC_W){pre_odd[1][PREPROC_W-1]}}, pre_odd[1]}; // dest=110, pred=100, PRE[1]
+assign bm_r2_odd[6][1] = {{(BM_R2_W-PREPROC_W){pre_odd[2][PREPROC_W-1]}}, pre_odd[2]}; // dest=110, pred=101, PRE[2]
+assign bm_r2_odd[7][0] = {{(BM_R2_W-PREPROC_W){pre_odd[0][PREPROC_W-1]}}, pre_odd[0]}; // dest=111, pred=110, PRE[0]
+assign bm_r2_odd[7][1] = {{(BM_R2_W-PREPROC_W){pre_odd[3][PREPROC_W-1]}}, pre_odd[3]}; // dest=111, pred=111, PRE[3]
+// EVEN STEP — identical structure, substitute pre_even for pre_odd
+```
+
+---
+
+## SECTION 8 — MODULE: `bm_radix4`
+
+### Purpose
+Combinational. Combines pairs of radix-2 branch metrics to form 32 radix-4 branch metrics (4 per destination state).
+
+### Interface
+```verilog
+module bm_radix4 (
+    input  wire signed [BM_R2_W-1:0] bm_r2_odd  [0:7][0:1],
+    input  wire signed [BM_R2_W-1:0] bm_r2_even [0:7][0:1],
+    output wire signed [BM_R4_W-1:0] bm_r4 [0:7][0:3]
+);
+```
+
+### Implementation (directly from Section 3.4 table)
+
+`bm_r4[dest][i] = bm_r2_odd[s'][pred_of_s''_in_s'] + bm_r2_even[dest][pred_of_s'_in_dest]`
+
+From the table in Section 3.4, for each path `(dest, s'', s', i)`:
+
+```verilog
+// State 000
+assign bm_r4[0][0] = bm_r2_odd[0][0] + bm_r2_even[0][0]; // s''=000,s'=000: odd PRE[0]+even PRE[0]
+assign bm_r4[0][1] = bm_r2_odd[0][1] + bm_r2_even[0][0]; // s''=001,s'=000: odd PRE[3]+even PRE[0]
+assign bm_r4[0][2] = bm_r2_odd[1][0] + bm_r2_even[0][1]; // s''=010,s'=001: odd PRE[1]+even PRE[3]
+assign bm_r4[0][3] = bm_r2_odd[1][1] + bm_r2_even[0][1]; // s''=011,s'=001: odd PRE[2]+even PRE[3]
+// State 001
+assign bm_r4[1][0] = bm_r2_odd[2][0] + bm_r2_even[1][0]; // s''=100,s'=010: odd PRE[2]+even PRE[1]
+assign bm_r4[1][1] = bm_r2_odd[2][1] + bm_r2_even[1][0]; // s''=101,s'=010: odd PRE[1]+even PRE[1]
+assign bm_r4[1][2] = bm_r2_odd[3][0] + bm_r2_even[1][1]; // s''=110,s'=011: odd PRE[3]+even PRE[2]
+assign bm_r4[1][3] = bm_r2_odd[3][1] + bm_r2_even[1][1]; // s''=111,s'=011: odd PRE[0]+even PRE[2]
+// State 010
+assign bm_r4[2][0] = bm_r2_odd[4][0] + bm_r2_even[2][0]; // s''=000,s'=100: odd PRE[3]+even PRE[2]
+assign bm_r4[2][1] = bm_r2_odd[4][1] + bm_r2_even[2][0]; // s''=001,s'=100: odd PRE[0]+even PRE[2]
+assign bm_r4[2][2] = bm_r2_odd[5][0] + bm_r2_even[2][1]; // s''=010,s'=101: odd PRE[2]+even PRE[1]
+assign bm_r4[2][3] = bm_r2_odd[5][1] + bm_r2_even[2][1]; // s''=011,s'=101: odd PRE[1]+even PRE[1]
+// State 011
+assign bm_r4[3][0] = bm_r2_odd[6][0] + bm_r2_even[3][0]; // s''=100,s'=110: odd PRE[1]+even PRE[3]
+assign bm_r4[3][1] = bm_r2_odd[6][1] + bm_r2_even[3][0]; // s''=101,s'=110: odd PRE[2]+even PRE[3]
+assign bm_r4[3][2] = bm_r2_odd[7][0] + bm_r2_even[3][1]; // s''=110,s'=111: odd PRE[0]+even PRE[0]
+assign bm_r4[3][3] = bm_r2_odd[7][1] + bm_r2_even[3][1]; // s''=111,s'=111: odd PRE[3]+even PRE[0]
+// State 100
+assign bm_r4[4][0] = bm_r2_odd[0][0] + bm_r2_even[4][0]; // s''=000,s'=000: odd PRE[0]+even PRE[3]
+assign bm_r4[4][1] = bm_r2_odd[0][1] + bm_r2_even[4][0]; // s''=001,s'=000: odd PRE[3]+even PRE[3]
+assign bm_r4[4][2] = bm_r2_odd[1][0] + bm_r2_even[4][1]; // s''=010,s'=001: odd PRE[1]+even PRE[0]
+assign bm_r4[4][3] = bm_r2_odd[1][1] + bm_r2_even[4][1]; // s''=011,s'=001: odd PRE[2]+even PRE[0]
+// State 101
+assign bm_r4[5][0] = bm_r2_odd[2][0] + bm_r2_even[5][0]; // s''=100,s'=010: odd PRE[2]+even PRE[2]
+assign bm_r4[5][1] = bm_r2_odd[2][1] + bm_r2_even[5][0]; // s''=101,s'=010: odd PRE[1]+even PRE[2]
+assign bm_r4[5][2] = bm_r2_odd[3][0] + bm_r2_even[5][1]; // s''=110,s'=011: odd PRE[3]+even PRE[1]
+assign bm_r4[5][3] = bm_r2_odd[3][1] + bm_r2_even[5][1]; // s''=111,s'=011: odd PRE[0]+even PRE[1]
+// State 110
+assign bm_r4[6][0] = bm_r2_odd[4][0] + bm_r2_even[6][0]; // s''=000,s'=100: odd PRE[3]+even PRE[1]
+assign bm_r4[6][1] = bm_r2_odd[4][1] + bm_r2_even[6][0]; // s''=001,s'=100: odd PRE[0]+even PRE[1]
+assign bm_r4[6][2] = bm_r2_odd[5][0] + bm_r2_even[6][1]; // s''=010,s'=101: odd PRE[2]+even PRE[2]
+assign bm_r4[6][3] = bm_r2_odd[5][1] + bm_r2_even[6][1]; // s''=011,s'=101: odd PRE[1]+even PRE[2]
+// State 111
+assign bm_r4[7][0] = bm_r2_odd[6][0] + bm_r2_even[7][0]; // s''=100,s'=110: odd PRE[1]+even PRE[0]
+assign bm_r4[7][1] = bm_r2_odd[6][1] + bm_r2_even[7][0]; // s''=101,s'=110: odd PRE[2]+even PRE[0]
+assign bm_r4[7][2] = bm_r2_odd[7][0] + bm_r2_even[7][1]; // s''=110,s'=111: odd PRE[0]+even PRE[3]
+assign bm_r4[7][3] = bm_r2_odd[7][1] + bm_r2_even[7][1]; // s''=111,s'=111: odd PRE[3]+even PRE[3]
+```
+
+**Indexing note**: `bm_r2_odd[s'][pred_idx]` — for the odd-step contribution, `s'` is the intermediate state and `pred_idx` is the index of `s''` in the predecessor list of `s'`. Cross-reference Section 3.3 to get the pred_idx for each `(s'', s')` pair.
+
+---
+
+## SECTION 9 — MODULE: `acs_r4`
+
+### Purpose
+Registered. One instance per trellis state per recursion unit (24 total). Implements the radix-4 max-log ACS with modulo-normalization and parallel comparator + LUT selection.
+
+### Interface
+```verilog
+module acs_r4 (
+    input  wire                      clk, rst_n, enable,
+    input  wire signed [BM_R4_W-1:0] bm  [0:3],
+    input  wire signed [SM_W-1:0]    sm_in [0:3],
+    output reg  signed [SM_W-1:0]    sm_out
+);
+```
+
+### Candidate Computation
+```verilog
+wire signed [SM_W:0] cand [0:3]; // 1 extra bit for addition overflow
+assign cand[i] = sm_in[i] + {{(SM_W-BM_R4_W){bm[i][BM_R4_W-1]}}, bm[i]};
+// Then truncate to SM_W for comparison (take lower SM_W bits — this IS the modulo step)
+wire signed [SM_W-1:0] c [0:3];
+assign c[i] = cand[i][SM_W-1:0];
+```
+
+### Modulo-Normalization Comparison
+For two state metrics `a` and `b` (both `SM_W` bits), `a > b` under modulo arithmetic is:
+```verilog
+function modulo_gt;
+    input signed [SM_W-1:0] a, b;
+    wire signed [SM_W-1:0] diff = a - b;
+    modulo_gt = (diff != 0) && (diff[SM_W-1] == 0);
+endfunction
+```
+
+The comparison is based purely on the **sign bit of the difference**, which works correctly under modulo arithmetic as long as the true difference |a−b| < 2^(SM_W−1). This is guaranteed by the SM_W=10 bit width for 5-bit LLR inputs.
+
+### Parallel Comparator + LUT
+
+Compute 6 pairwise comparisons (using `modulo_gt`):
+```verilog
+wire cmp [0:5];
+assign cmp[0] = modulo_gt(c[0], c[1]); // A > B
+assign cmp[1] = modulo_gt(c[0], c[2]); // A > C
+assign cmp[2] = modulo_gt(c[0], c[3]); // A > D
+assign cmp[3] = modulo_gt(c[1], c[2]); // B > C
+assign cmp[4] = modulo_gt(c[1], c[3]); // B > D
+assign cmp[5] = modulo_gt(c[2], c[3]); // C > D
+```
+
+6-bit LUT: `{cmp[5], cmp[4], cmp[3], cmp[2], cmp[1], cmp[0]}` → 2-bit `sel`:
+
+```verilog
+reg [1:0] sel;
+always @(*) begin
+    casez ({cmp[5],cmp[4],cmp[3],cmp[2],cmp[1],cmp[0]})
+        // A is maximum (cmp[2:0] = A>B, A>C, A>D all true → cmp[0]=1,cmp[1]=1,cmp[2]=1)
+        6'b??_?1_11: sel = 2'd0;  // A>B AND A>C AND A>D
+        // B is maximum (A<B, B>C, B>D)
+        6'b?1_10_00: sel = 2'd1;  // B>D AND B>C AND A<B (cmp[0]=0)
+        6'b?1_11_00: sel = 2'd1;  // covers B>A>... hmm
+```
+
+**Full explicit LUT** (all 24 valid orderings of {A,B,C,D}, grouped by winner):
+
+```verilog
+always @(*) begin
+    case ({cmp[5],cmp[4],cmp[3],cmp[2],cmp[1],cmp[0]})
+        // A wins (cmp[0]=A>B=1, cmp[1]=A>C=1, cmp[2]=A>D=1)
+        6'b11_11_11: sel = 2'd0; // A>B>C>D
+        6'b01_11_11: sel = 2'd0; // A>B>D>C
+        6'b11_01_11: sel = 2'd0; // A>C>B>D  {cmp5=1,cmp4=1,cmp3=0,cmp2=1,cmp1=1,cmp0=1}
+        6'b10_01_11: sel = 2'd0; // A>C>D>B
+        6'b00_11_11: sel = 2'd0; // A>D>B>C  {cmp5=0,cmp4=0,cmp3=1,cmp2=1,cmp1=1,cmp0=1}
+        6'b00_01_11: sel = 2'd0; // A>D>C>B
+        // B wins (cmp[0]=A>B=0, cmp[3]=B>C=1, cmp[4]=B>D=1)
+        6'b11_11_10: sel = 2'd1; // B>A>C>D  {cmp5=1,cmp4=1,cmp3=1,cmp2=1,cmp1=1,cmp0=0}
+        6'b01_11_10: sel = 2'd1; // B>A>D>C
+        6'b11_10_00: sel = 2'd1; // B>C>A>D  {cmp5=1,cmp4=1,cmp3=1,cmp2=0,cmp1=0,cmp0=0}... 
+
+        // — provide all 24 valid patterns explicitly —
+        // Unreachable patterns default to A
+        default: sel = 2'd0;
+    endcase
+end
+```
+
+**Provide all 24 entries explicitly in the case statement**. The 24 patterns are derived from the 4! = 24 total orderings of {A,B,C,D}. The full set of `{cmp5,cmp4,cmp3,cmp2,cmp1,cmp0}` patterns for each winner:
+
+**A wins** (6 orderings: A first):
+`6'b111111, 6'b011111, 6'b110111, 6'b100111, 6'b001111, 6'b000111`
+
+**B wins** (6 orderings: B first):
+`6'b111110, 6'b011110, 6'b111100, 6'b111000, 6'b011010, 6'b011000`
+
+**C wins** (6 orderings: C first):
+`6'b110101, 6'b100101, 6'b110100, 6'b110000, 6'b100001, 6'b100000`
+
+**D wins** (6 orderings: D first):
+`6'b001011, 6'b000011, 6'b001010, 6'b001000, 6'b000001, 6'b000000`
+
+Map each pattern → sel value, implement as a 24-entry case + default.
+
+### Register Update
+```verilog
+always @(posedge clk) begin
+    if (!rst_n)       sm_out <= 0;
+    else if (enable)  sm_out <= c[sel];
+end
+```
+
+---
+
+## SECTION 10 — MODULE: `forward_recursion_unit`
+
+### Purpose
+Processes one window per activation. Runs bm_preproc + bm_radix2 + bm_radix4 + 8× acs_r4. Writes alpha and gamma memories.
+
+### Interface
+```verilog
+module forward_recursion_unit (
+    input  wire                       clk, rst_n,
+    input  wire                       active,
+    input  wire [3:0]                 win_len_r4,      // 15 for full, 9 for last
+    input  wire                       is_dummy,        // 1 = dummy forward pass
+    input  wire signed [LLR_W-1:0]   sys_odd, sys_even,
+    input  wire signed [LLR_W-1:0]   par_odd, par_even,
+    input  wire signed [LLR_W-1:0]   apr_odd, apr_even,
+    // Alpha memory write
+    output reg  [3:0]                 alpha_wr_addr,
+    output reg  signed [SM_W-1:0]    alpha_wr_data [0:7],
+    output reg                        alpha_wr_en,
+    output reg                        alpha_bank_sel,
+    // Gamma memory write
+    output reg  [3:0]                 gamma_wr_addr,
+    output reg  signed [BM_R2_W-1:0] gamma_wr_data [0:31],
+    output reg                        gamma_wr_en,
+    output reg                        gamma_bank_sel,
+    output reg                        window_done
+);
+```
+
+### Internal State
+- 8 state metric registers: `sm[0:7]`, `SM_W` bits each
+- Step counter: `step_cnt`, 4 bits (counts 0 to win_len_r4−1)
+- On `is_dummy` start: initialize all `sm[i] = 0`
+- On normal window start: retain `sm[i]` from end of previous window (or from end of dummy pass on first real window)
+
+### Behavior Per Active Cycle
+1. `bm_preproc` computes `pre_odd[0:3]`, `pre_even[0:3]` (combinational from LLR inputs)
+2. `bm_radix2` computes 32 radix-2 BMs (combinational)
+3. Write all 32 radix-2 BMs to gamma memory: `gamma_wr_addr = step_cnt`, `gamma_wr_en = 1`
+4. `bm_radix4` computes 32 radix-4 BMs (combinational)
+5. ACS units update `sm[0:7]` (registered on clock edge, `enable = active`)
+6. Write updated `sm[0:7]` to alpha memory: `alpha_wr_addr = step_cnt`, `alpha_wr_en = 1`
+7. Increment `step_cnt`
+8. When `step_cnt == win_len_r4 - 1`: assert `window_done` on next cycle, reset `step_cnt = 0`
+
+**For the dummy forward pass**: write to alpha memory as normal (these are the initial α values used for W1). Do NOT write gamma memory during dummy pass.
+
+**ACS input wiring (forward direction)**:
+```
+sm_in[i] for ACS of state s:
+  = sm[s''_0], sm[s''_1], sm[s''_2], sm[s''_3]
+  where s''_0..3 are the 4 radix-4 predecessors of s (from Section 3.4 table)
+```
+
+Example for state 0 (dest=000): `sm_in = {sm[0], sm[1], sm[2], sm[3]}` (predecessors are states 000,001,010,011)
+Example for state 1 (dest=001): `sm_in = {sm[4], sm[5], sm[6], sm[7]}` (predecessors are states 100,101,110,111)
+
+This pattern (states split into two groups) is consistent with the cluster structure noted in Section 3.2.
+
+---
+
+## SECTION 11 — MODULE: `backward_recursion_unit`
+
+### Purpose
+Processes one window in reverse trellis order. Uses externally provided beta_init. Drives the LLR computation unit.
+
+### Interface
+```verilog
+module backward_recursion_unit (
+    input  wire                       clk, rst_n, active,
+    input  wire [3:0]                 win_len_r4,
+    input  wire signed [LLR_W-1:0]   sys_odd, sys_even,
+    input  wire signed [LLR_W-1:0]   par_odd, par_even,
+    input  wire signed [LLR_W-1:0]   apr_odd, apr_even,
+    input  wire signed [SM_W-1:0]    beta_init [0:7],   // from DBR, registered
+    // Alpha memory read (1-cycle latency)
+    output reg  [3:0]                 alpha_rd_addr,
+    output reg                        alpha_bank_sel,
+    input  wire signed [SM_W-1:0]    alpha_rd_data [0:7],
+    // Gamma memory read (1-cycle latency)
+    output reg  [3:0]                 gamma_rd_addr,
+    output reg                        gamma_bank_sel,
+    input  wire signed [BM_R2_W-1:0] gamma_rd_data [0:31],
+    // To LLR compute unit
+    output reg  signed [SM_W-1:0]    beta_cur [0:7],
+    output reg  [3:0]                 cur_step,          // step index within window
+    output reg                        beta_valid,
+    output reg  signed [LLR_W-1:0]   sys_to_llr,        // sys LLR for current step
+    output reg  signed [LLR_W-1:0]   apr_to_llr,
+    output reg                        window_done
+);
+```
+
+### Backward Recursion Direction
+
+The backward recursion traverses from step `win_len_r4 - 1` down to `0`. At each step `t` (counting down):
+- Issue memory read for alpha and gamma at address `t` (one cycle before needed: issue at cycle for step `t+1`)
+- Wait one cycle for memory read latency
+- Compute backward ACS using `bm_r4` values **from the same step `t`** gamma memory data
+- Store result in `sm[0:7]` (beta registers)
+
+**Backward ACS wiring**: For backward recursion, the update is:
+```
+β_{t-1}(s'') = max_s [ β_t(s) + γ_r4(s'', s) ]
+```
+
+For each predecessor state `s''`, the 4 candidates are `{β_t(s) + γ_r4(s'', s) : s ∈ successors(s'')}`.
+
+The 8 backward ACS units are indexed by `s''` (not `s`). For each `s''`, its 4 successors in the radix-4 sense are known from the forward table (since `s''` at step k-2 has 4 possible destinations at step k). Build the transposed wiring from Section 3.4.
+
+**Memory read pipeline**:
+- Cycle 0: issue `alpha_rd_addr = win_len_r4-1`, `gamma_rd_addr = win_len_r4-1`. Load `sm[i] = beta_init[i]`.
+- Cycle 1: alpha/gamma data valid. Compute BMs for step `win_len_r4-1`. Assert `beta_valid`. Output current beta + alpha to LLR compute.
+- Continue decrementing until step 0 complete.
+- `cur_step` should reflect which step's beta and alpha are presented to the LLR unit.
+
+---
+
+## SECTION 12 — MODULE: `dummy_backward_recursion_unit`
+
+### Purpose
+Traverses one window in backward direction to generate stable beta initial values for BR. Does not access alpha/gamma. Does not trigger LLR computation.
+
+### Interface
+```verilog
+module dummy_backward_recursion_unit (
+    input  wire                       clk, rst_n, active,
+    input  wire [3:0]                 win_len_r4,
+    input  wire signed [LLR_W-1:0]   sys_odd, sys_even,
+    input  wire signed [LLR_W-1:0]   par_odd, par_even,
+    input  wire signed [LLR_W-1:0]   apr_odd, apr_even,
+    output reg  signed [SM_W-1:0]    final_beta [0:7],  // valid when window_done asserts
+    output reg                        window_done
+);
+```
+
+### Initialization
+On every window activation: initialize all internal `sm[i] = 0` at `step_cnt = win_len_r4 - 1` (before processing begins). Process from step `win_len_r4-1` down to `0`. On `window_done`, `final_beta[i] = sm[i]` (the state metrics after traversing the full window).
+
+### Computation
+Identical to backward recursion unit: instantiates its own `bm_preproc`, `bm_radix2`, `bm_radix4`, and 8× `acs_r4` (in backward wiring). No memory reads. Uses BMs computed from the input LLRs for whatever window it's processing.
+
+---
+
+## SECTION 13 — MODULE: `llr_compute`
+
+### Purpose
+Registered (1 stage pipeline). Receives beta, alpha, and gamma from the backward recursion unit every cycle and produces two extrinsic LLRs per cycle (one for odd step, one for even step).
+
+### Interface
+```verilog
+module llr_compute (
+    input  wire                       clk, rst_n,
+    input  wire                       beta_valid,
+    input  wire signed [SM_W-1:0]    beta_k    [0:7],  // β at even step k
+    input  wire signed [SM_W-1:0]    alpha_km2 [0:7],  // α_{k-2} from alpha memory
+    input  wire signed [BM_R2_W-1:0] bm_r2_odd  [0:31], // 16 R2 BMs odd step (from gamma mem)
+    input  wire signed [BM_R2_W-1:0] bm_r2_even [0:31], // 16 R2 BMs even step (from gamma mem)
+    input  wire signed [LLR_W-1:0]   sys_odd_k, apr_odd_k,
+    input  wire signed [LLR_W-1:0]   sys_even_k, apr_even_k,
+    output reg  signed [EXTR_W-1:0]  llr_extr_odd,
+    output reg  signed [EXTR_W-1:0]  llr_extr_even,
+    output reg                        llr_valid
+);
+```
+
+### Step 1: Derive Odd-Step Alpha `α_{k-1}(s')`
+
+`α_{k-1}(s')` is not stored directly (only even-step α is stored). Derive it from `α_{k-2}` and the radix-2 odd branch metrics:
+
+```
+α_{k-1}(s') = max_{s''} [ α_{k-2}(s'') + γ_r2_odd(s'', s') ]
+```
+
+For each of the 8 states `s'`, this is a 2-input max over its 2 radix-2 predecessors:
+
+```verilog
+wire signed [SM_W:0] alpha_km1_cand [0:7][0:1];
+wire signed [SM_W-1:0] alpha_km1 [0:7];
+// For s'=000: predecessors s''∈{000,001}
+assign alpha_km1_cand[0][0] = alpha_km2[0] + bm_r2_odd[0][0]; // s''=000 → s'=000
+assign alpha_km1_cand[0][1] = alpha_km2[1] + bm_r2_odd[0][1]; // s''=001 → s'=000
+assign alpha_km1[0] = modulo_gt(alpha_km1_cand[0][0][SM_W-1:0],
+                                 alpha_km1_cand[0][1][SM_W-1:0])
+                     ? alpha_km1_cand[0][0][SM_W-1:0]
+                     : alpha_km1_cand[0][1][SM_W-1:0];
+// ... repeat for all 8 states using Section 3.3 predecessor table
+```
+
+Predecessor mapping for odd-step alpha derivation is identical to the radix-2 predecessor table in Section 3.3.
+
+### Step 2: Derive Odd-Step Beta `β_{k-1}(s')`
+
+Similarly, derive `β_{k-1}(s')` from `β_k(s)` and the radix-2 even branch metrics:
+
+```
+β_{k-1}(s') = max_{s} [ β_k(s) + γ_r2_even(s', s) ]
+```
+
+This is a 2-input max over the 2 successors of `s'` in the radix-2 even step:
+
+```verilog
+wire signed [SM_W-1:0] beta_km1 [0:7];
+// For s'=000: successors s∈{000,100} (from transition table: 000,0→000 and 000,1→100)
+assign beta_km1_cand[0][0] = beta_k[0] + bm_r2_even[0][0]; // s=000, s'=000, PRE[0]
+assign beta_km1_cand[0][1] = beta_k[4] + bm_r2_even[4][0]; // s=100, s'=000, PRE[3]
+// NOTE: bm_r2_even[dest][pred_idx] — we need to look up by (dest=successor, pred=s')
+// For s'=000→s=000: bm_r2_even[0][0] (dest=000, pred_0=000)
+// For s'=000→s=100: bm_r2_even[4][0] (dest=100, pred_0=000)  ← predecessor 0 of state 100 is 000
+// Continue for all 8 s' states using transition table
+```
+
+Build a "successor table" (transpose of predecessor table in Sec 3.3) for the even step to wire all 8 `beta_km1` derivations.
+
+### Step 3: Even-Step LLR Computation
+
+For each of the 16 paths `(s', s)` in the even step:
+```
+path_metric_even(s', s) = α_{k-1}(s') + γ_r2_even(s', s) + β_k(s)
+```
+
+where `γ_r2_even(s', s) = bm_r2_even[s][pred_idx_of_s'_in_s]`.
+
+Partition the 16 paths by `xs_even`:
+- `max0_even` = max of all path metrics where `xs_even = 0` (8 paths)
+- `max1_even` = max of all path metrics where `xs_even = 1` (8 paths)
+
+`xs_even = 0` paths: (000→000), (001→100), (010→001), (011→101), (100→110), (101→010), (110→111), (111→011)
+`xs_even = 1` paths: (000→100), (001→000), (010→101), (011→001), (100→010), (101→110), (110→011), (111→111)
+
+`L_D_even = max0_even - max1_even`
+
+### Step 4: Odd-Step LLR Computation
+
+For each of the 16 paths `(s'', s')` in the odd step:
+```
+path_metric_odd(s'', s') = α_{k-2}(s'') + γ_r2_odd(s'', s') + β_{k-1}(s')
+```
+
+Partition by `xs_odd` (same xs mapping, applied to odd step transitions):
+- `max0_odd`, `max1_odd`
+- `L_D_odd = max0_odd - max1_odd`
+
+### Step 5: Maximization Trees
+
+Each `max0` and `max1` is a max-of-8. Implement as a binary tree of 7 two-input max units, each using `modulo_gt`. Pipeline with one register stage at the output (this is the 1-cycle latency).
+
+### Step 6: Extrinsic and Scaling
+
+```verilog
+// Even step
+wire signed [SM_W-1:0] le_even = ld_even - (sys_even_k + apr_even_k);
+wire signed [SM_W-1:0] le_even_scaled = le_even - (le_even >>> 3) - (le_even >>> 4);
+llr_extr_even <= saturate(le_even_scaled, EXTR_W); // saturate to [-32,31]
+
+// Odd step
+wire signed [SM_W-1:0] le_odd = ld_odd - (sys_odd_k + apr_odd_k);
+wire signed [SM_W-1:0] le_odd_scaled = le_odd - (le_odd >>> 3) - (le_odd >>> 4);
+llr_extr_odd <= saturate(le_odd_scaled, EXTR_W);
+```
+
+Saturation function: if value > 31, output 31; if value < -32, output -32; else pass through lower 6 bits.
+
+---
+
+## SECTION 14 — MEMORY MODULES
+
+### `alpha_mem`
+```verilog
+module alpha_mem (
+    input  wire         clk,
+    input  wire         wr_en,
+    input  wire [3:0]   wr_addr,                 // 0..14
+    input  wire signed [SM_W-1:0] wr_data [0:7],
+    input  wire [3:0]   rd_addr,
+    output reg  signed [SM_W-1:0] rd_data [0:7]  // 1-cycle read latency
+);
+    reg signed [SM_W-1:0] mem [0:14][0:7];
+    always @(posedge clk) begin
+        if (wr_en) mem[wr_addr] <= wr_data; // write all 8 state metrics
+        rd_data <= mem[rd_addr];             // synchronous read
+    end
+```
+
+### `gamma_mem`
+```verilog
+module gamma_mem (
+    input  wire         clk,
+    input  wire         wr_en,
+    input  wire [3:0]   wr_addr,                      // 0..14
+    input  wire signed [BM_R2_W-1:0] wr_data [0:31],  // 16 odd + 16 even BMs
+    input  wire [3:0]   rd_addr,
+    output reg  signed [BM_R2_W-1:0] rd_data [0:31]   // 1-cycle read latency
+);
+```
+
+Instantiate `alpha_mem` twice (`alpha_mem_bank0`, `alpha_mem_bank1`) and `gamma_mem` twice (`gamma_mem_bank0`, `gamma_mem_bank1`) inside `bcjr_core`.
+
+Bank-select muxing: FR always writes to the bank matching `fr_win_idx[0]`. BR always reads from the bank matching `br_win_idx[0]`.
+
+---
+
+## SECTION 15 — TOP-LEVEL FSM: `bcjr_core`
+
+### 15.1 Port List
+
+```verilog
+module bcjr_core #(
+    parameter FRAME_LEN_MAX = 768
+) (
+    input  wire                       clk, rst_n,
+    input  wire                       start,
+    input  wire [9:0]                 frame_len,    // actual frame length ≤ 768
+    output reg                        done,
+
+    // LLR Memory Interface
+    output reg                        llr_req,
+    output reg  [ADDR_W-1:0]         fr_llr_addr,
+    output reg  [ADDR_W-1:0]         br_llr_addr,
+    output reg  [ADDR_W-1:0]         dbr_llr_addr,
+    input  wire                       llr_valid,
+    input  wire signed [LLR_W-1:0]   fr_sys_odd,  fr_sys_even,
+    input  wire signed [LLR_W-1:0]   fr_par_odd,  fr_par_even,
+    input  wire signed [LLR_W-1:0]   fr_apr_odd,  fr_apr_even,
+    input  wire signed [LLR_W-1:0]   br_sys_odd,  br_sys_even,
+    input  wire signed [LLR_W-1:0]   br_par_odd,  br_par_even,
+    input  wire signed [LLR_W-1:0]   br_apr_odd,  br_apr_even,
+    input  wire signed [LLR_W-1:0]   dbr_sys_odd, dbr_sys_even,
+    input  wire signed [LLR_W-1:0]   dbr_par_odd, dbr_par_even,
+    input  wire signed [LLR_W-1:0]   dbr_apr_odd, dbr_apr_even,
+
+    // Extrinsic LLR output
+    output reg  signed [EXTR_W-1:0]  llr_extr_out,
+    output reg  [ADDR_W-1:0]         llr_out_addr,
+    output reg                        llr_out_valid
+);
+```
+
+### 15.2 Internal Registers
+
+```verilog
+reg [2:0] state;
+reg [4:0] fr_win_idx;   // 0=dummy, 1..26 = W1..W26
+reg [4:0] br_win_idx;   // 0=idle (inactive), 1..26 = W1..W26
+reg [4:0] dbr_win_idx;  // 0=idle, 2..27 (DBR runs one ahead of FR)
+reg [3:0] step_cnt;     // radix-4 step within current window
+reg [3:0] win_len_r4_cur; // 15 or 9
+reg signed [SM_W-1:0] br_beta_init_reg [0:7]; // holds DBR final_beta for BR use
+reg br_active, dbr_active, fr_active;
+```
+
+### 15.3 LLR Address Computation
+
+For a given window index `win_idx` and step-within-window `step`:
+```
+base_trellis_step = (win_idx - 1) * WIN_LEN + step * 2
+fr_llr_addr  = base_trellis_step (for FR)
+br_llr_addr  = (br_win_idx - 1) * WIN_LEN + step * 2 (reversed: win_len_r4-1-step for backward)
+dbr_llr_addr = (dbr_win_idx - 1) * WIN_LEN + step * 2 (reversed for backward)
+```
+
+BR and DBR traverse in reverse order within the window, so `step` for them counts `win_len_r4-1` down to `0`.
+
+### 15.4 FSM States and Transitions
+
+```verilog
+localparam ST_IDLE       = 3'd0;
+localparam ST_LLR_REQ    = 3'd1;
+localparam ST_LLR_WAIT   = 3'd2;  // wait 1 cycle for BRAM latency
+localparam ST_COMPUTE    = 3'd3;  // BM_R2 + BM_R4 + ACS (combinational+registered, 1 cycle)
+localparam ST_LLR_OUT    = 3'd4;  // BR backward + LLR compute active
+localparam ST_WIN_DONE   = 3'd5;
+```
+
+**ST_IDLE**:
+- On `start`: initialize `fr_win_idx=0` (dummy), `br_win_idx=0` (inactive), `dbr_win_idx=0` (inactive), `step_cnt=0`, `win_len_r4_cur=WIN_LEN_R4`, `br_active=0`, `dbr_active=0`, `fr_active=1`
+- Assert `fr_active` only for dummy pass
+- Go to `ST_LLR_REQ`
+
+**ST_LLR_REQ**:
+- Assert `llr_req = 1`
+- Output `fr_llr_addr`, `br_llr_addr`, `dbr_llr_addr` for current `step_cnt`
+- Go to `ST_LLR_WAIT`
+
+**ST_LLR_WAIT**:
+- Deassert `llr_req = 0`
+- Wait for `llr_valid` (should arrive this same cycle since latency = 1)
+- Latch incoming LLR data into registered inputs for FR, BR, DBR
+- Go to `ST_COMPUTE`
+
+**ST_COMPUTE**:
+- All three active recursion units perform bm_preproc → bm_radix2 → bm_radix4 → ACS (registered)
+- FR: write gamma and alpha memories
+- Increment `step_cnt`
+- If `step_cnt < win_len_r4_cur`: go back to `ST_LLR_REQ`
+- Else: go to `ST_LLR_OUT` (BR unit has finished ACS updates; now do LLR output phase)
+- Note: During dummy forward pass (`fr_win_idx == 0`): skip gamma write. When window done, save `sm[0:7]` as persistent initial state metrics for FR unit W1 start.
+
+**ST_LLR_OUT**:
+- BR unit traverses window in reverse, issuing alpha/gamma reads and asserting `beta_valid` each cycle
+- `llr_compute` receives beta+alpha+gamma and produces `llr_out_odd`, `llr_out_even` one cycle later
+- This phase lasts `win_len_r4_cur` cycles plus 1 pipeline cycle (total: `win_len_r4_cur + 1` cycles for all LLR outputs to drain)
+- Address each output: `llr_out_addr = (br_win_idx-1)*WIN_LEN + cur_step*2` (even) and `+1` (odd)
+- On each `llr_out_valid`: latch and output `llr_extr_out`, `llr_out_addr`, `llr_out_valid`
+- When all outputs done: go to `ST_WIN_DONE`
+- Note: BR unit is only active for `br_win_idx ≥ 1`. For the first scheduling slot (slot 1), BR is inactive and `ST_LLR_OUT` is skipped.
+
+**ST_WIN_DONE**:
+- Capture `dbr_unit.final_beta` into `br_beta_init_reg` (if DBR was active)
+- Advance window indices per schedule:
+  - `fr_win_idx++`
+  - `br_win_idx++` (or activate if was 0 and `fr_win_idx >= 1`)
+  - `dbr_win_idx++` (or deactivate if `dbr_win_idx > NUM_WIN`)
+- Update `br_active`, `dbr_active`, `fr_active`
+- Compute `win_len_r4_cur` for next iteration
+- Reset `step_cnt = 0`
+- If `br_win_idx > NUM_WIN` after increment: assert `done`, go to `ST_IDLE`
+- Else: go to `ST_LLR_REQ`
+
+### 15.5 Activation Logic Summary
+
+```
+fr_active  = (fr_win_idx <= NUM_WIN)
+br_active  = (br_win_idx >= 1) && (br_win_idx <= NUM_WIN)
+dbr_active = (dbr_win_idx >= 2) && (dbr_win_idx <= NUM_WIN + 1)
+// Note: DBR processes windows 2' through (NUM_WIN+1)' = W27', but W27 doesn't exist
+// Cap: dbr_active = (dbr_win_idx <= NUM_WIN) [DBR only runs if there's a next BR window]
+```
+
+### 15.6 Module Interconnect Inside `bcjr_core`
+
+```verilog
+// LLR input registers (latched on llr_valid)
+reg signed [LLR_W-1:0] fr_sys_odd_r, fr_sys_even_r, ...; // all 18 LLR registers
+always @(posedge clk) if (llr_valid) begin
+    fr_sys_odd_r <= fr_sys_odd; /* ... all 18 */ end
+
+// Instantiations
+bm_preproc u_preproc_fr(.sys_odd(fr_sys_odd_r), ...);
+bm_preproc u_preproc_br(.sys_odd(br_sys_odd_r), ...);
+bm_preproc u_preproc_dbr(.sys_odd(dbr_sys_odd_r), ...);
+bm_radix2  u_r2_fr(...); bm_radix2 u_r2_br(...); bm_radix2 u_r2_dbr(...);
+bm_radix4  u_r4_fr(...); bm_radix4 u_r4_br(...); bm_radix4 u_r4_dbr(...);
+
+// 8 ACS units per recursion unit (24 total)
+genvar i;
+generate for (i=0; i<8; i=i+1) begin : fr_acs
+    acs_r4 u_acs(.enable(fr_active), .bm(bm_r4_fr[i]), .sm_in(fr_sm_in[i]), .sm_out(fr_sm[i]), ...);
+end endgenerate
+// Repeat for BR and DBR
+
+// Alpha memory (2 banks)
+alpha_mem u_alpha0(...); alpha_mem u_alpha1(...);
+// Mux: FR writes to bank[fr_win_idx[0]], BR reads from bank[br_win_idx[0]]
+assign alpha_wr_bank_sel = fr_win_idx[0];
+assign alpha_rd_bank_sel = br_win_idx[0];
+
+// Gamma memory (2 banks)
+gamma_mem u_gamma0(...); gamma_mem u_gamma1(...);
+
+// DBR → BR beta_init pipeline register
+always @(posedge clk)
+    if (dbr_window_done) br_beta_init_reg <= dbr_final_beta;
+
+// LLR compute
+llr_compute u_llr_compute(
+    .beta_valid(br_beta_valid),
+    .beta_k(br_beta_cur),
+    .alpha_km2(alpha_rd_data),
+    .bm_r2_odd(gamma_odd_half),   // lower 16 entries from gamma_rd_data
+    .bm_r2_even(gamma_even_half), // upper 16 entries from gamma_rd_data
+    .sys_odd_k(br_sys_odd_to_llr), .apr_odd_k(br_apr_odd_to_llr),
+    .sys_even_k(br_sys_even_to_llr), .apr_even_k(br_apr_even_to_llr),
+    ...
+);
+```
+
+---
+
+## SECTION 16 — IMPLEMENTATION CONSTRAINTS
+
+1. **No latches**: All `always` blocks must either be `always @(posedge clk)` (registered) or purely combinational with complete sensitivity lists. Use `always @(*)` for combinational. Avoid incomplete case/if without defaults.
+
+2. **Signed arithmetic throughout**: Use `signed` keyword on all LLR, BM, and SM signals. Use `$signed()` for explicit casts. Width-match operands before operations using explicit concatenation/extension.
+
+3. **No implicit truncation**: When assigning a wider result to a narrower signal, explicitly take the lower bits. This is intentional for modulo-normalization — document each such truncation with a comment.
+
+4. **No multipliers**: The only arithmetic operations are addition, subtraction, and bit-shifting. No `*` operator anywhere.
+
+5. **Reset behavior**: Active-low synchronous reset `rst_n`. On `!rst_n`: FSM → IDLE, all counters → 0, all state metrics → 0, `done` → 0.
+
+6. **Gamma memory ordering convention**: The 32 entries per address are stored as `[bm_r2_odd[0][0], bm_r2_odd[0][1], ..., bm_r2_odd[7][1], bm_r2_even[0][0], ..., bm_r2_even[7][1]]` — odd BMs first (indices 0–15), even BMs second (indices 16–31). Maintain this ordering consistently between writer (FR) and reader (LLR compute via BR).
+
+7. **ACS predecessor wiring for backward recursion**: The backward ACS wiring is the **transpose** of the forward wiring. For each state `s''`, identify all `s` such that `(s'', s)` is a valid radix-4 path (from Section 3.4), and collect `{β_k(s) + γ_r4(s'', s)}` as the 4 candidates. Pre-compute the transposed connectivity from the Section 3.4 table.
+
+8. **LLR output address validity**: `llr_out_valid` must only be asserted when `br_active = 1`. Dummy/idle slots must not produce output.
+
+9. **Partial window**: When `fr_win_idx == NUM_WIN` and `FRAME_LEN % WIN_LEN != 0`, set `win_len_r4_cur = LAST_WIN_R4 = 9`. All three units use the same `win_len_r4_cur`.
+
+10. **Compile-time parameters only**: Do not use dynamic array sizes. All memories and loop bounds use localparams.
+
+---
+
+## SECTION 17 — FILE STRUCTURE
+
+```
+bm_preproc.v                    // Section 6
+bm_radix2.v                     // Section 7
+bm_radix4.v                     // Section 8
+acs_r4.v                        // Section 9
+alpha_mem.v                     // Section 14
+gamma_mem.v                     // Section 14
+forward_recursion_unit.v        // Section 10
+backward_recursion_unit.v       // Section 11
+dummy_backward_recursion_unit.v // Section 12
+llr_compute.v                   // Section 13
+bcjr_core.v                     // Section 15 — top level
+```
+
+Each file must re-declare all necessary localparams at the top. No implicit dependencies on other files' parameters.
+
+---
+
+## SECTION 18 — PRE-SUBMISSION CHECKLIST
+
+Before outputting any code, verify internally:
+
+**Trellis correctness**:
+- [ ] All 16 entries in Section 3.2 transition table match polynomials g_r=13, g_p=15 octal
+- [ ] All 32 entries in Section 3.4 radix-4 predecessor table verified by composing two consecutive radix-2 transitions
+- [ ] xs classification in Section 3.5 matches xs=u for each transition
+
+**ACS**:
+- [ ] All 24 LUT entries in Section 9 cover all 4! permutations of {A,B,C,D}
+- [ ] Modulo comparison uses sign-bit of difference, not plain `>`
+- [ ] Backward ACS uses transposed wiring (indexed by s'', not s)
+
+**Memory**:
+- [ ] FR writes bank `fr_win_idx[0]`; BR reads bank `br_win_idx[0]`; these are always opposite for same window pair
+- [ ] Gamma memory stores exactly 32 BMs (16 odd + 16 even) per address, in the documented order
+- [ ] Alpha memory read address issued 1 cycle before data needed
+
+**LLR computation**:
+- [ ] `α_{k-1}(s')` derived from `α_{k-2}` + `γ_r2_odd` (8 separate 2-input maxes)
+- [ ] `β_{k-1}(s')` derived from `β_k(s)` + `γ_r2_even` (8 separate 2-input maxes)
+- [ ] Extrinsic = intrinsic − (L_s + L_A), applied to both odd and even steps
+- [ ] Scaling = value − (value>>3) − (value>>4), using arithmetic right shift
+- [ ] Output saturated to 6-bit signed range [-32, 31]
+
+**FSM**:
+- [ ] Dummy forward pass (`fr_win_idx=0`) completes before W1 is processed
+- [ ] DBR `final_beta` is registered on `window_done` and held until BR's next window
+- [ ] `done` asserted exactly once, after BR completes window 26
+- [ ] `step_cnt` reset to 0 at `ST_WIN_DONE`
+- [ ] Partial window 26 (9 radix-4 cycles) handled without out-of-bounds memory access
+- [ ] `llr_out_addr` computed using `br_win_idx` and `cur_step`, giving correct frame-level trellis index
