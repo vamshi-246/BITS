@@ -121,7 +121,7 @@ def run_golden_siso_model(sys, par, apr):
 def write_hex_files(sys, par, apr, extr_golden):
     frame_len = len(sys)
     
-    with open('input_llr.hex', 'w') as fin:
+    with open('../data/input_llr.hex', 'w') as fin:
         for i in range(frame_len):
             # Format: {apr(5), par(5), sys(5)} => 15 bits
             s = int(sys[i]) & 0x1F
@@ -131,13 +131,13 @@ def write_hex_files(sys, par, apr, extr_golden):
             fin.write(f"{val:04X}\n")
 
     # Generate human-readable decimal table
-    with open('input_llr_readable.txt', 'w') as f_read:
+    with open('../data/input_llr_readable.txt', 'w') as f_read:
         f_read.write(f"{'ADDR':>4} | {'SYS':>4} | {'PAR':>4} | {'APR':>4}\n")
         f_read.write("-" * 27 + "\n")
         for i in range(frame_len):
             f_read.write(f"{i:03X}  | {int(sys[i]):>4} | {int(par[i]):>4} | {int(apr[i]):>4}\n")
 
-    with open('ref_extrinsic.hex', 'w') as fout:
+    with open('../data/ref_extrinsic.hex', 'w') as fout:
         # We output in pairs (odd, even) just like the RTL will output
         for i in range(0, frame_len, 2):
             if i+1 < frame_len:
@@ -152,7 +152,7 @@ def write_hex_files(sys, par, apr, extr_golden):
 
 if __name__ == "__main__":
     np.random.seed(42) # Deterministic for repeatability
-    FRAME_LEN = 780  # 26 full windows * 30 for CORE_ID=0
+    FRAME_LEN = 3072  # 6144/2 = 3072 per core (2 SISO modules)
     
     print(f"Generating Random Test Vectors for FRAME_LEN = {FRAME_LEN}...")
     s, p, a = generate_random_llrs(FRAME_LEN)
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     print("Running Golden Python Max-Log-MAP Model...")
     extr_golden = run_golden_siso_model(s, p, a)
     
-    print("Writing Test Vectors to 'input_llr.hex' and 'ref_extrinsic.hex'...")
+    print("Writing Test Vectors to '../data/input_llr.hex' and '../data/ref_extrinsic.hex'...")
     write_hex_files(s, p, a, extr_golden)
     
     print("Done. You can now run the Verilog testbench.")

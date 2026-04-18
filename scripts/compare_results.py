@@ -24,12 +24,12 @@ def load_hex(filename):
 
 if __name__ == "__main__":
     import os
-    if not os.path.exists("ref_extrinsic.hex") or not os.path.exists("rtl_extrinsic.hex"):
+    if not os.path.exists("../data/ref_extrinsic.hex") or not os.path.exists("../data/rtl_extrinsic.hex"):
         print("Required hex files missing.")
         sys.exit(1)
 
-    ref_data, ref_count = load_hex("ref_extrinsic.hex")
-    rtl_data, rtl_count = load_hex("rtl_extrinsic.hex")
+    ref_data, ref_count = load_hex("../data/ref_extrinsic.hex")
+    rtl_data, rtl_count = load_hex("../data/rtl_extrinsic.hex")
     
     print(f"Loaded {ref_count} reference values and {rtl_count} RTL values.")
     

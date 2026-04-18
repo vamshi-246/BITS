@@ -8,7 +8,7 @@
 //==============================================================================
 module tb_bcjr_core;
 
-    localparam FRAME_LEN = 780; // 26 full windows * 30 = 780 for CORE_ID=0
+    localparam FRAME_LEN = 3072; // 6144/2 = 3072 per core (2 SISO modules)
     localparam WIN_LEN   = 30;  // Trellis steps per window
 
     // =========================================================================
@@ -27,11 +27,12 @@ module tb_bcjr_core;
     // Format: 15 bits per word => {apr(5), par(5), sys(5)}
     // Size: FRAME_LEN words. 
     // =========================================================================
-    reg [14:0] llr_mem [0:FRAME_LEN-1];
+    reg [14:0] llr_mem [0:4095]; // allocate enough for padded windows
     
     initial begin
-        // Initialize memory from python generated hex file
-        $readmemh("input_llr.hex", llr_mem);
+        // Load actual test data from python generated hex file
+        // Entries beyond file length remain 0 (simulator default)
+        $readmemh("../data/input_llr.hex", llr_mem);
     end
 
     // =========================================================================
@@ -40,10 +41,10 @@ module tb_bcjr_core;
     reg  start;
     wire done;
     
-    wire        llr_req;
-    wire [9:0]  fr_llr_addr;
-    wire [9:0]  br_llr_addr;
-    wire [9:0]  dbr_llr_addr;
+    wire         llr_req;
+    wire [11:0] fr_llr_addr;
+    wire [11:0] br_llr_addr;
+    wire [11:0] dbr_llr_addr;
     reg         llr_valid;
     
     reg signed [4:0] fr_sys_odd, fr_sys_even;
@@ -60,7 +61,7 @@ module tb_bcjr_core;
 
     wire signed [5:0] llr_extr_odd_out;
     wire signed [5:0] llr_extr_even_out;
-    wire [9:0]        llr_out_addr;
+    wire [11:0]       llr_out_addr;
     wire              llr_out_valid;
 
     // =========================================================================
@@ -68,7 +69,8 @@ module tb_bcjr_core;
     // =========================================================================
     bcjr_core #(
         .CORE_ID(0),
-        .NUM_WINDOWS(26)
+        .NUM_SISO(2),
+        .NUM_WINDOWS(103)   // ceil(3072/30) = 103
     ) dut (
         .clk(clk),
         .rst_n(rst_n),
@@ -144,7 +146,7 @@ module tb_bcjr_core;
     integer f_out;
     
     initial begin
-        f_out = $fopen("rtl_extrinsic.hex", "w");
+        f_out = $fopen("../data/rtl_extrinsic.hex", "w");
         if (f_out == 0) begin
             $display("ERROR: Cannot open output file rtl_extrinsic.hex!");
             $finish;
@@ -193,9 +195,9 @@ module tb_bcjr_core;
         $finish;
     end
     
-    // Safety timeout
+    // Safety timeout (103 windows need much more time)
     initial begin
-        #50000;
+        #1000000;
         $display("ERROR: Simulation timed out!");
         $finish;
     end
