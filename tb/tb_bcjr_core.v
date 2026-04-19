@@ -32,7 +32,7 @@ module tb_bcjr_core;
     initial begin
         // Load actual test data from python generated hex file
         // Entries beyond file length remain 0 (simulator default)
-        $readmemh("../data/input_llr.hex", llr_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/input_llr.hex", llr_mem);
     end
 
     // =========================================================================
@@ -146,7 +146,7 @@ module tb_bcjr_core;
     integer f_out;
     
     initial begin
-        f_out = $fopen("../data/rtl_extrinsic.hex", "w");
+        f_out = $fopen("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/rtl_extrinsic.hex", "w");
         if (f_out == 0) begin
             $display("ERROR: Cannot open output file rtl_extrinsic.hex!");
             $finish;

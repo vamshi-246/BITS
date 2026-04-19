@@ -63,14 +63,14 @@ module tb_turbo_decoder;
     reg [9:0] par2_odd_mem [0:1535];
 
     initial begin
-        $readmemh("../data/sys_even_ram.hex",     sys_even_mem);
-        $readmemh("../data/sys_odd_ram.hex",      sys_odd_mem);
-        $readmemh("../data/par1_even_ram.hex",    par1_even_mem);
-        $readmemh("../data/par1_odd_ram.hex",     par1_odd_mem);
-        $readmemh("../data/sys_ilv_even_ram.hex", silv_even_mem);
-        $readmemh("../data/sys_ilv_odd_ram.hex",  silv_odd_mem);
-        $readmemh("../data/par2_even_ram.hex",    par2_even_mem);
-        $readmemh("../data/par2_odd_ram.hex",     par2_odd_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/sys_even_ram.hex",     sys_even_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/sys_odd_ram.hex",      sys_odd_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/par1_even_ram.hex",    par1_even_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/par1_odd_ram.hex",     par1_odd_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/sys_ilv_even_ram.hex", silv_even_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/sys_ilv_odd_ram.hex",  silv_odd_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/par2_even_ram.hex",    par2_even_mem);
+        $readmemh("C:/VAMSHI/IIT Mandi Academic Folder/IITM 6th Sem/DVAD/BITS_LTE_Parallel_Turbo_Decoder/data/par2_odd_ram.hex",     par2_odd_mem);
     end
 
     // =========================================================================
