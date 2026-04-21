@@ -128,6 +128,7 @@ module bcjr_core #(
     reg signed [SM_W-1:0] br_beta_init_reg_6, br_beta_init_reg_7;
 
     reg fr_init_sm;
+    reg dbr_init_sm;
     reg br_load_beta;
     reg br_phase_active;
 
@@ -214,6 +215,7 @@ module bcjr_core #(
     dummy_backward_recursion_unit u_dbr (
         .clk(clk), .rst_n(rst_n),
         .active(dbr_compute_active),
+        .init_sm(dbr_init_sm),
         .win_len_r4(WIN_LEN_R4),
         .sys_odd(dbr_sys_odd_r), .sys_even(dbr_sys_even_r),
         .par_odd(dbr_par_odd_r), .par_even(dbr_par_even_r),
@@ -558,6 +560,7 @@ module bcjr_core #(
             llr_extr_odd_out  <= 6'sd0;
             llr_extr_even_out <= 6'sd0;
             fr_init_sm     <= 1'b0;
+            dbr_init_sm    <= 1'b0;
             br_load_beta   <= 1'b0;
             br_phase_active <= 1'b0;
             br_beta_init_reg_0 <= 10'sd0; br_beta_init_reg_1 <= 10'sd0;
@@ -578,6 +581,7 @@ module bcjr_core #(
             done          <= 1'b0;
             llr_out_valid <= 1'b0;
             fr_init_sm    <= 1'b0;
+            dbr_init_sm   <= 1'b0;
             br_load_beta  <= 1'b0;
 
             // Capture DBR final_beta into BR beta_init register
@@ -628,6 +632,7 @@ module bcjr_core #(
                         end
                         step_cnt       <= 4'd0;
                         fr_init_sm     <= 1'b1;  // Load initial state metrics
+                        dbr_init_sm    <= 1'b1;  // DBR initialized at start of first window
                         state          <= ST_LLR_REQ;
                     end
                 end
@@ -761,6 +766,7 @@ module bcjr_core #(
                         done  <= 1'b1;
                         state <= ST_IDLE;
                     end else begin
+                        dbr_init_sm <= 1'b1;
                         state <= ST_LLR_REQ;
                     end
                 end

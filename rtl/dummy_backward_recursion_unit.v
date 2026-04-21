@@ -26,6 +26,7 @@ module dummy_backward_recursion_unit (
     input  wire                       clk,
     input  wire                       rst_n,
     input  wire                       active,
+    input  wire                       init_sm,       // pulse to initialize beta SMs to 0
     input  wire [3:0]                 win_len_r4,
     input  wire signed [4:0]          sys_odd, sys_even,
     input  wire signed [4:0]          par_odd, par_even,
@@ -130,113 +131,125 @@ module dummy_backward_recursion_unit (
     // Uses load_init to initialize all SM to 0 at start of each window.
     // =========================================================================
     wire signed [SM_W-1:0] sm [0:7]; // beta state metrics
-    reg acs_load_init;
+    reg running;           // latched high from init_sm until window completes
+    reg capture_pending;   // delays final beta capture by 1 cycle
 
     // All DBR states init to 0 (equal probability — no state knowledge)
     wire signed [SM_W-1:0] dbr_init_val = 10'sd0;
 
+    // ACS enable: active only when running and not initializing
+    wire acs_en = active & running;
+
     // ACS for s''=000: successors s ∈ {0,2,4,6}, using bm_r4[s][0]
     acs_r4 u_acs_0 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_0),  .bm_1(bm_r4_8),  .bm_2(bm_r4_16), .bm_3(bm_r4_24),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[0])
     );
     // ACS for s''=001: using bm_r4[s][1] for s ∈ {0,2,4,6}
     acs_r4 u_acs_1 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_1),  .bm_1(bm_r4_9),  .bm_2(bm_r4_17), .bm_3(bm_r4_25),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[1])
     );
     // ACS for s''=010
     acs_r4 u_acs_2 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_2),  .bm_1(bm_r4_10), .bm_2(bm_r4_18), .bm_3(bm_r4_26),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[2])
     );
     // ACS for s''=011
     acs_r4 u_acs_3 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_3),  .bm_1(bm_r4_11), .bm_2(bm_r4_19), .bm_3(bm_r4_27),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[3])
     );
     // ACS for s''=100: successors s ∈ {1,3,5,7}, using bm_r4[s][0]
     acs_r4 u_acs_4 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_4),  .bm_1(bm_r4_12), .bm_2(bm_r4_20), .bm_3(bm_r4_28),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[4])
     );
     // ACS for s''=101: using bm_r4[s][1] for s ∈ {1,3,5,7}
     acs_r4 u_acs_5 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_5),  .bm_1(bm_r4_13), .bm_2(bm_r4_21), .bm_3(bm_r4_29),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[5])
     );
     // ACS for s''=110
     acs_r4 u_acs_6 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_6),  .bm_1(bm_r4_14), .bm_2(bm_r4_22), .bm_3(bm_r4_30),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[6])
     );
     // ACS for s''=111
     acs_r4 u_acs_7 (
-        .clk(clk), .rst_n(rst_n), .enable(active & ~acs_load_init),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
         .bm_0(bm_r4_7),  .bm_1(bm_r4_15), .bm_2(bm_r4_23), .bm_3(bm_r4_31),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
-        .init_val(dbr_init_val), .load_init(acs_load_init),
+        .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[7])
     );
 
     // =========================================================================
     // Control FSM
+    //
+    // running:          latched HIGH by init_sm, stays HIGH until window done
+    // capture_pending:  delays final beta capture by 1 cycle so sm[] reflects
+    //                   the result of the LAST ACS update (not the pre-update)
     // =========================================================================
-    reg active_prev;
     reg [3:0] step_cnt;
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            step_cnt      <= 4'd0;
-            window_done   <= 1'b0;
-            acs_load_init <= 1'b0;
-            active_prev   <= 1'b0;
-            final_beta_0  <= 10'sd0; final_beta_1 <= 10'sd0;
-            final_beta_2  <= 10'sd0; final_beta_3 <= 10'sd0;
-            final_beta_4  <= 10'sd0; final_beta_5 <= 10'sd0;
-            final_beta_6  <= 10'sd0; final_beta_7 <= 10'sd0;
+            step_cnt        <= 4'd0;
+            window_done     <= 1'b0;
+            running         <= 1'b0;
+            capture_pending <= 1'b0;
+            final_beta_0    <= 10'sd0; final_beta_1 <= 10'sd0;
+            final_beta_2    <= 10'sd0; final_beta_3 <= 10'sd0;
+            final_beta_4    <= 10'sd0; final_beta_5 <= 10'sd0;
+            final_beta_6    <= 10'sd0; final_beta_7 <= 10'sd0;
         end else begin
-            window_done   <= 1'b0;
-            active_prev   <= active;
+            window_done <= 1'b0;
 
-            // Initialize beta to 0 on rising edge of active
-            if (active && !active_prev) begin
-                acs_load_init <= 1'b1;
-                step_cnt      <= 4'd0;
-            end else begin
-                acs_load_init <= 1'b0;
+            // ----- Delayed capture: 1 cycle after last ACS step -----
+            // sm[] now holds the result of all 15 ACS updates
+            if (capture_pending) begin
+                capture_pending <= 1'b0;
+                window_done     <= 1'b1;
+                running         <= 1'b0;
+                final_beta_0    <= sm[0]; final_beta_1 <= sm[1];
+                final_beta_2    <= sm[2]; final_beta_3 <= sm[3];
+                final_beta_4    <= sm[4]; final_beta_5 <= sm[5];
+                final_beta_6    <= sm[6]; final_beta_7 <= sm[7];
             end
 
-            if (active && !acs_load_init) begin
+            // ----- Initialization: load all SMs to 0, begin window -----
+            if (init_sm) begin
+                running  <= 1'b1;
+                step_cnt <= 4'd0;
+            end
+
+            // ----- Step counter: runs on each active pulse while running -----
+            if (active && running) begin
                 if (step_cnt == win_len_r4 - 4'd1) begin
-                    window_done  <= 1'b1;
-                    step_cnt     <= 4'd0;
-                    // Capture final beta values
-                    final_beta_0 <= sm[0]; final_beta_1 <= sm[1];
-                    final_beta_2 <= sm[2]; final_beta_3 <= sm[3];
-                    final_beta_4 <= sm[4]; final_beta_5 <= sm[5];
-                    final_beta_6 <= sm[6]; final_beta_7 <= sm[7];
+                    capture_pending <= 1'b1;
+                    step_cnt        <= 4'd0;
                 end else begin
                     step_cnt <= step_cnt + 4'd1;
                 end
