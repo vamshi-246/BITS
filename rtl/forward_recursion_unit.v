@@ -162,7 +162,7 @@ module forward_recursion_unit #(
     // =========================================================================
     wire signed [SM_W-1:0] sm [0:7]; // alpha state metrics (read from ACS outputs)
     reg acs_load_init; // asserted during init_sm cycle
-
+    
     // Init values: CORE_ID=0 gets known initial state, others get all-zero
     wire signed [SM_W-1:0] acs_init_0 = (CORE_ID == 0) ? 10'sd0   : 10'sd0;
     wire signed [SM_W-1:0] acs_init_1 = (CORE_ID == 0) ? NEG_INF  : 10'sd0;

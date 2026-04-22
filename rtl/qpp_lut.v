@@ -44,9 +44,9 @@ module qpp_lut (
     (* ram_style = "block" *) reg [12:0] lut_copy2 [0:3071];
 
     initial begin
-        $readmemh("../data/qpp_6144.hex", lut_copy0);
-        $readmemh("../data/qpp_6144.hex", lut_copy1);
-        $readmemh("../data/qpp_6144.hex", lut_copy2);
+        $readmemh("C:/Users/USER/Documents/Digital_VLSI_grp_10_BITS/BITS/data/qpp_6144.hex", lut_copy0);
+        $readmemh("C:/Users/USER/Documents/Digital_VLSI_grp_10_BITS/BITS/data/qpp_6144.hex", lut_copy1);
+        $readmemh("C:/Users/USER/Documents/Digital_VLSI_grp_10_BITS/BITS/data/qpp_6144.hex", lut_copy2);
     end
 
     // Copy 0 — FR even (port A) and FR odd (port B)

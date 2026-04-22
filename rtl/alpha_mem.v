@@ -9,7 +9,7 @@
 module alpha_mem (
     input  wire         clk,
     input  wire         wr_en,
-    input  wire [3:0]   wr_addr,               // 0..14
+    input  wire [3:0]   wr_addr,               // 0..1 n4
     input  wire signed [9:0] wr_data_0,
     input  wire signed [9:0] wr_data_1,
     input  wire signed [9:0] wr_data_2,

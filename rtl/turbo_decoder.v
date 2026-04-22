@@ -24,7 +24,8 @@ module turbo_decoder (
     // Result interface
     output reg         decode_done,
     input  wire [10:0] ld_rd_addr,
-    output wire [11:0] ld_rd_data
+    output wire [11:0] ld_rd_data,
+    output wire [11:0] ld_rd_data_odd
 );
 
     // =========================================================================
@@ -107,6 +108,12 @@ module turbo_decoder (
     wire [10:0] fr_row  = c0_fr_addr[11:1];
     wire [10:0] br_row  = c0_br_addr[11:1];
     wire [10:0] dbr_row = c0_dbr_addr[11:1];
+
+    // Out-of-range detection — last window may exceed valid address space.
+    // BCJR core contract: top-level must provide zero LLRs for OOR addresses.
+    wire fr_oor  = (c0_fr_addr  >= FRAME_LEN);
+    wire br_oor  = (c0_br_addr  >= FRAME_LEN);
+    wire dbr_oor = (c0_dbr_addr >= FRAME_LEN);
 
     // =========================================================================
     // Perm bit registers (interleaved phase, registered in F_C1)
@@ -214,7 +221,8 @@ module turbo_decoder (
                               is_interleaved ? mn_fr_e_row : fr_row;
     wire [10:0] extr_e_rd1 = is_interleaved ? mn_br_e_row  : br_row;
     wire [10:0] extr_e_rd2 = is_interleaved ? mn_dbr_e_row : dbr_row;
-    wire [10:0] extr_o_rd0 = is_interleaved ? mn_fr_o_row  : fr_row;
+    wire [10:0] extr_o_rd0 = (main_state == ST_WRITE_LD) ? ld_cnt :
+                              is_interleaved ? mn_fr_o_row  : fr_row;
     wire [10:0] extr_o_rd1 = is_interleaved ? mn_br_o_row  : br_row;
     wire [10:0] extr_o_rd2 = is_interleaved ? mn_dbr_o_row : dbr_row;
 
@@ -239,9 +247,10 @@ module turbo_decoder (
     // =========================================================================
     // LD BRAM write signals
     // =========================================================================
-    wire        ld_w_en   = ld_rd_valid;
-    wire [10:0] ld_w_addr = ld_wr_idx;
-    wire [11:0] ld_w_data = extr_even_fr;
+    wire        ld_w_en       = ld_rd_valid;
+    wire [10:0] ld_w_addr     = ld_wr_idx;
+    wire [11:0] ld_w_data     = extr_even_fr;
+    wire [11:0] ld_w_data_odd = extr_odd_fr;
 
     // Stall detection wires (interleaved write vs extrinsic read conflict)
     wire stall_detect = ilv_wb && (
@@ -370,20 +379,31 @@ module turbo_decoder (
     // =====================================================================
     //  GROUP-C LD BRAM
     // =====================================================================
-    ld_bram u_ld_ram (.clk(clk),
+    ld_bram u_ld_ram_even (.clk(clk),
         .wr_en(ld_w_en), .wr_addr(ld_w_addr), .wr_data(ld_w_data),
         .rd_addr(ld_rd_addr), .rd_data(ld_rd_data));
 
+    ld_bram u_ld_ram_odd (.clk(clk),
+        .wr_en(ld_w_en), .wr_addr(ld_w_addr), .wr_data(ld_w_data_odd),
+        .rd_addr(ld_rd_addr), .rd_data(ld_rd_data_odd));
+
     // =====================================================================
-    //  QPP INTERLEAVER LUT
+    //  QPP INTERLEAVER LUT — addresses clamped to avoid X from OOR reads
     // =====================================================================
+    wire [11:0] qpp_fr_e  = (lut_fr_e_addr < FRAME_LEN) ? lut_fr_e_addr        : 12'd0;
+    wire [11:0] qpp_fr_o  = (lut_fr_o_addr < FRAME_LEN) ? lut_fr_o_addr        : 12'd0;
+    wire [11:0] qpp_br_e  = (c0_br_addr    < FRAME_LEN) ? c0_br_addr            : 12'd0;
+    wire [11:0] qpp_br_o  = ((c0_br_addr + 12'd1) < FRAME_LEN) ? (c0_br_addr + 12'd1) : 12'd0;
+    wire [11:0] qpp_dbr_e = (c0_dbr_addr   < FRAME_LEN) ? c0_dbr_addr           : 12'd0;
+    wire [11:0] qpp_dbr_o = ((c0_dbr_addr + 12'd1) < FRAME_LEN) ? (c0_dbr_addr + 12'd1) : 12'd0;
+
     qpp_lut u_qpp_lut (.clk(clk),
-        .addr_fr_even(lut_fr_e_addr),
-        .addr_fr_odd(lut_fr_o_addr),
-        .addr_br_even(c0_br_addr),
-        .addr_br_odd(c0_br_addr + 12'd1),
-        .addr_dbr_even(c0_dbr_addr),
-        .addr_dbr_odd(c0_dbr_addr + 12'd1),
+        .addr_fr_even(qpp_fr_e),
+        .addr_fr_odd(qpp_fr_o),
+        .addr_br_even(qpp_br_e),
+        .addr_br_odd(qpp_br_o),
+        .addr_dbr_even(qpp_dbr_e),
+        .addr_dbr_odd(qpp_dbr_o),
         .pi_fr_even(pi_fr_even), .pi_fr_odd(pi_fr_odd),
         .pi_br_even(pi_br_even), .pi_br_odd(pi_br_odd),
         .pi_dbr_even(pi_dbr_even), .pi_dbr_odd(pi_dbr_odd));
@@ -507,22 +527,37 @@ module turbo_decoder (
 
                     // ----- BRAM + LUT data ready (1 cycle after addr) -----
                     F_C1: begin
-                        // Load 24 sys/par regs (phase-selected MUX)
-                        // FR
-                        c0_fr_sys_even<=s_even_fr[4:0]; c1_fr_sys_even<=s_even_fr[9:5];
-                        c0_fr_sys_odd <=s_odd_fr[4:0];  c1_fr_sys_odd <=s_odd_fr[9:5];
-                        c0_fr_par_even<=p_even_fr[4:0]; c1_fr_par_even<=p_even_fr[9:5];
-                        c0_fr_par_odd <=p_odd_fr[4:0];  c1_fr_par_odd <=p_odd_fr[9:5];
+                        // Load 24 sys/par regs — zero when out-of-range
+                        // FR (OOR check uses registered address from previous cycle)
+                        if (fr_oor) begin
+                            {c0_fr_sys_even,c1_fr_sys_even,c0_fr_sys_odd,c1_fr_sys_odd} <= 20'd0;
+                            {c0_fr_par_even,c1_fr_par_even,c0_fr_par_odd,c1_fr_par_odd} <= 20'd0;
+                        end else begin
+                            c0_fr_sys_even<=s_even_fr[4:0]; c1_fr_sys_even<=s_even_fr[9:5];
+                            c0_fr_sys_odd <=s_odd_fr[4:0];  c1_fr_sys_odd <=s_odd_fr[9:5];
+                            c0_fr_par_even<=p_even_fr[4:0]; c1_fr_par_even<=p_even_fr[9:5];
+                            c0_fr_par_odd <=p_odd_fr[4:0];  c1_fr_par_odd <=p_odd_fr[9:5];
+                        end
                         // BR
-                        c0_br_sys_even<=s_even_br[4:0]; c1_br_sys_even<=s_even_br[9:5];
-                        c0_br_sys_odd <=s_odd_br[4:0];  c1_br_sys_odd <=s_odd_br[9:5];
-                        c0_br_par_even<=p_even_br[4:0]; c1_br_par_even<=p_even_br[9:5];
-                        c0_br_par_odd <=p_odd_br[4:0];  c1_br_par_odd <=p_odd_br[9:5];
+                        if (br_oor) begin
+                            {c0_br_sys_even,c1_br_sys_even,c0_br_sys_odd,c1_br_sys_odd} <= 20'd0;
+                            {c0_br_par_even,c1_br_par_even,c0_br_par_odd,c1_br_par_odd} <= 20'd0;
+                        end else begin
+                            c0_br_sys_even<=s_even_br[4:0]; c1_br_sys_even<=s_even_br[9:5];
+                            c0_br_sys_odd <=s_odd_br[4:0];  c1_br_sys_odd <=s_odd_br[9:5];
+                            c0_br_par_even<=p_even_br[4:0]; c1_br_par_even<=p_even_br[9:5];
+                            c0_br_par_odd <=p_odd_br[4:0];  c1_br_par_odd <=p_odd_br[9:5];
+                        end
                         // DBR
-                        c0_dbr_sys_even<=s_even_dbr[4:0]; c1_dbr_sys_even<=s_even_dbr[9:5];
-                        c0_dbr_sys_odd <=s_odd_dbr[4:0];  c1_dbr_sys_odd <=s_odd_dbr[9:5];
-                        c0_dbr_par_even<=p_even_dbr[4:0]; c1_dbr_par_even<=p_even_dbr[9:5];
-                        c0_dbr_par_odd <=p_odd_dbr[4:0];  c1_dbr_par_odd <=p_odd_dbr[9:5];
+                        if (dbr_oor) begin
+                            {c0_dbr_sys_even,c1_dbr_sys_even,c0_dbr_sys_odd,c1_dbr_sys_odd} <= 20'd0;
+                            {c0_dbr_par_even,c1_dbr_par_even,c0_dbr_par_odd,c1_dbr_par_odd} <= 20'd0;
+                        end else begin
+                            c0_dbr_sys_even<=s_even_dbr[4:0]; c1_dbr_sys_even<=s_even_dbr[9:5];
+                            c0_dbr_sys_odd <=s_odd_dbr[4:0];  c1_dbr_sys_odd <=s_odd_dbr[9:5];
+                            c0_dbr_par_even<=p_even_dbr[4:0]; c1_dbr_par_even<=p_even_dbr[9:5];
+                            c0_dbr_par_odd <=p_odd_dbr[4:0];  c1_dbr_par_odd <=p_odd_dbr[9:5];
+                        end
 
                         if (!is_interleaved) begin
                             // === NATURAL: also load 12 apr regs ===
@@ -535,19 +570,31 @@ module turbo_decoder (
                                 c0_dbr_apr_even<=5'sd0; c0_dbr_apr_odd<=5'sd0;
                                 c1_dbr_apr_even<=5'sd0; c1_dbr_apr_odd<=5'sd0;
                             end else begin
-                                // Extrinsic BRAM data → truncate 6→5 bit
-                                c0_fr_apr_even <=extr_even_fr[4:0];
-                                c1_fr_apr_even <=extr_even_fr[10:6];
-                                c0_fr_apr_odd  <=extr_odd_fr[4:0];
-                                c1_fr_apr_odd  <=extr_odd_fr[10:6];
-                                c0_br_apr_even <=extr_even_br[4:0];
-                                c1_br_apr_even <=extr_even_br[10:6];
-                                c0_br_apr_odd  <=extr_odd_br[4:0];
-                                c1_br_apr_odd  <=extr_odd_br[10:6];
-                                c0_dbr_apr_even<=extr_even_dbr[4:0];
-                                c1_dbr_apr_even<=extr_even_dbr[10:6];
-                                c0_dbr_apr_odd <=extr_odd_dbr[4:0];
-                                c1_dbr_apr_odd <=extr_odd_dbr[10:6];
+                                // Extrinsic BRAM data → truncate 6→5 bit (zero if OOR)
+                                if (fr_oor) begin
+                                    {c0_fr_apr_even,c0_fr_apr_odd,c1_fr_apr_even,c1_fr_apr_odd} <= 20'd0;
+                                end else begin
+                                    c0_fr_apr_even <=extr_even_fr[4:0];
+                                    c1_fr_apr_even <=extr_even_fr[10:6];
+                                    c0_fr_apr_odd  <=extr_odd_fr[4:0];
+                                    c1_fr_apr_odd  <=extr_odd_fr[10:6];
+                                end
+                                if (br_oor) begin
+                                    {c0_br_apr_even,c0_br_apr_odd,c1_br_apr_even,c1_br_apr_odd} <= 20'd0;
+                                end else begin
+                                    c0_br_apr_even <=extr_even_br[4:0];
+                                    c1_br_apr_even <=extr_even_br[10:6];
+                                    c0_br_apr_odd  <=extr_odd_br[4:0];
+                                    c1_br_apr_odd  <=extr_odd_br[10:6];
+                                end
+                                if (dbr_oor) begin
+                                    {c0_dbr_apr_even,c0_dbr_apr_odd,c1_dbr_apr_even,c1_dbr_apr_odd} <= 20'd0;
+                                end else begin
+                                    c0_dbr_apr_even<=extr_even_dbr[4:0];
+                                    c1_dbr_apr_even<=extr_even_dbr[10:6];
+                                    c0_dbr_apr_odd <=extr_odd_dbr[4:0];
+                                    c1_dbr_apr_odd <=extr_odd_dbr[10:6];
+                                end
                             end
                             llr_valid_to_cores <= 1'b1;
                             fetch_state <= F_IDLE;

@@ -30,7 +30,7 @@ module acs_r4 (
     assign cand_1 = $signed(sm_in_1) + $signed({{(SM_W-BM_R4_W){bm_1[BM_R4_W-1]}}, bm_1});
     assign cand_2 = $signed(sm_in_2) + $signed({{(SM_W-BM_R4_W){bm_2[BM_R4_W-1]}}, bm_2});
     assign cand_3 = $signed(sm_in_3) + $signed({{(SM_W-BM_R4_W){bm_3[BM_R4_W-1]}}, bm_3});
-
+    
     // Truncate to SM_W — intentional modulo normalization
     wire signed [SM_W-1:0] c0, c1, c2, c3;
     assign c0 = cand_0[SM_W-1:0];

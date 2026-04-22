@@ -1,5 +1,5 @@
 //==============================================================================
-// Module: bcjr_core
+// Module: bcjr_core 
 // Description: Top-level SISO decoder core implementing the Radix-4 Max-Log
 //              M-BCJR algorithm. Contains:
 //              - Forward recursion unit (FR)

@@ -1,4 +1,4 @@
-//==============================================================================
+ //==============================================================================
 // Module: llr_compute
 // Description: 1-stage pipelined LLR computation unit. Receives beta, alpha,
 //              and gamma each cycle and produces two extrinsic LLRs per cycle

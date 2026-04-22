@@ -33,6 +33,7 @@ module tb_turbo_decoder;
     wire       decode_done;
     reg [10:0] ld_rd_addr;
     wire [11:0] ld_rd_data;
+    wire [11:0] ld_rd_data_odd;
 
     // =========================================================================
     // DUT instantiation
@@ -47,7 +48,8 @@ module tb_turbo_decoder;
         .load_data(load_data),
         .decode_done(decode_done),
         .ld_rd_addr(ld_rd_addr),
-        .ld_rd_data(ld_rd_data)
+        .ld_rd_data(ld_rd_data),
+        .ld_rd_data_odd(ld_rd_data_odd)
     );
 
     // =========================================================================
@@ -86,6 +88,33 @@ module tb_turbo_decoder;
             done_count = done_count + 1;
             $display("[%0t] Core done pulse #%0d, half_iter_cnt=%0d",
                      $time, done_count, u_dut.half_iter_cnt);
+        end
+    end
+
+    // =========================================================================
+    // X-detection monitors — only during active decode (ST_RUNNING=1)
+    // =========================================================================
+    integer x_count;
+    initial x_count = 0;
+
+    always @(posedge clk) begin
+        if (u_dut.main_state == 3'd1) begin // ST_RUNNING
+            if (^u_dut.pi_fr_even === 1'bx && u_dut.fetch_state == 3'd1) begin
+                x_count = x_count + 1;
+                if (x_count <= 5) $display("[%0t] X-DETECT: pi_fr_even=%h (fetch_state=%0d, half_iter=%0d)", $time, u_dut.pi_fr_even, u_dut.fetch_state, u_dut.half_iter_cnt);
+            end
+            if (^u_dut.mn_fr_e_row === 1'bx && u_dut.fetch_state == 3'd1) begin
+                x_count = x_count + 1;
+                if (x_count <= 5) $display("[%0t] X-DETECT: mn_fr_e_row=%h (fetch_state=%0d, half_iter=%0d)", $time, u_dut.mn_fr_e_row, u_dut.fetch_state, u_dut.half_iter_cnt);
+            end
+            if (^u_dut.c0_l_extr_even === 1'bx && u_dut.c0_llr_out_valid) begin
+                x_count = x_count + 1;
+                if (x_count <= 5) $display("[%0t] X-DETECT: c0_l_extr_even=%h (llr_out_valid=1)", $time, u_dut.c0_l_extr_even);
+            end
+            if (^u_dut.c1_l_extr_even === 1'bx && u_dut.c1_llr_out_valid) begin
+                x_count = x_count + 1;
+                if (x_count <= 5) $display("[%0t] X-DETECT: c1_l_extr_even=%h (llr_out_valid=1)", $time, u_dut.c1_l_extr_even);
+            end
         end
     end
 
@@ -175,16 +204,16 @@ module tb_turbo_decoder;
         else
             $display("PASS: Correct number of done pulses (11).");
 
-        // ---- Read LD RAM and dump to file ----
-        fd = $fopen("../data/ld_ram_output.hex", "w");
+        // ---- Read LD RAM (even and odd) and dump to file ----
+        fd = $fopen("C:/Users/USER/Documents/Digital_VLSI_grp_10_BITS/BITS/data/ld_ram_output.hex", "w");
         for (i = 0; i < 1536; i = i + 1) begin
             @(posedge clk);
             ld_rd_addr <= i[10:0];
             @(posedge clk); // 1-cycle read latency
-            $fwrite(fd, "%03x\n", ld_rd_data);
+            $fwrite(fd, "%03x %03x\n", ld_rd_data, ld_rd_data_odd);
         end
         $fclose(fd);
-        $display("[%0t] LD RAM output written to ld_ram_output.hex", $time);
+        $display("[%0t] LD RAM output (even+odd) written to ld_ram_output.hex", $time);
 
         repeat (10) @(posedge clk);
         $display("Simulation complete.");
