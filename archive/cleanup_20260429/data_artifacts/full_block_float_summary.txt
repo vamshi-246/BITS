@@ -1,0 +1,40 @@
+Floating-Point Full-Block Turbo Decoder Summary
+===============================================
+
+Input data:
+- Current repository BRAM LLR files.
+- K = 6144.
+- 11 half-iterations.
+- BER is original transmitted bit versus hard_decision(final intrinsic L_D).
+- Hard decision: L_D < 0 -> bit 1, else bit 0.
+
+Baseline:
+- Channel hard decisions: 1160/6144 = 0.188802
+- RTL/fixed-point windowed parallel final L_D: 99/6144 = 0.016113
+
+Floating full-block results on the same 5-bit quantized inputs:
+
+1. Max-Log, no extrinsic/a-priori clipping
+   - Final L_D BER: 281/6144 = 0.045736
+   - Report: float_full_block_maxlog_results.txt
+
+2. Log-MAP, no extrinsic/a-priori clipping
+   - Final L_D BER: 269/6144 = 0.043783
+   - Report: float_full_block_logmap_results.txt
+
+3. Max-Log, 6-bit extrinsic clipping and 5-bit a-priori clipping
+   - Final L_D BER: 61/6144 = 0.009928
+   - Report: float_full_block_maxlog_extr6_apr5_results.txt
+
+4. Log-MAP, 6-bit extrinsic clipping and 5-bit a-priori clipping
+   - Final L_D BER: 63/6144 = 0.010254
+   - Report: float_full_block_logmap_extr6_apr5_results.txt
+
+Interpretation:
+- The full-block clipped floating model performs better than the current RTL
+  regression on this frame: 61 errors versus 99 errors.
+- The unbounded floating exchange performs worse on this quantized/noisy frame,
+  which indicates uncontrolled extrinsic growth is harmful here.
+- The gap between clipped full-block floating Max-Log and RTL is now a useful
+  estimate of loss from windowing, segmentation, fixed-point state metrics, and
+  current parallel-boundary handling.

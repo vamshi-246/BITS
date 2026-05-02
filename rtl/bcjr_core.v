@@ -15,21 +15,21 @@
 //   ALL windows always run the full 15 R4 cycles. For the last window
 //   (which may be partial), out-of-range addresses get zero LLRs from
 //   the external memory controller, and output addresses beyond
-//   frame_len are filtered (llr_out_valid suppressed).
+//   output_len are filtered (llr_out_valid suppressed).
 //   This ensures FR, BR, and DBR running on different windows in
 //   parallel never get desynchronized by a shortened window.
 //
 // CORE_ID-specific behavior (2 parallel SISO modules for current config):
-//   CORE_ID=0 (first):      skips dummy forward pass; uses known initial
-//                            state α(S0)=0, α(S1..S7)=-∞
-//   CORE_ID=NUM_SISO-1 (last): skips last DBR; uses known terminal state
-//                            β(S0)=0, β(S1..S7)=-∞
-//   Others:                 dummy forward processes previous segment's
-//                            last window; last DBR processes next segment's
-//                            first window.
+//   All cores are kept in lockstep so the top level can write core0/core1
+//   outputs into one folded BRAM word using a shared valid/address.
+//   CORE_ID=0 starts with known initial state α(S0)=0, α(S1..S7)=-∞.
+//   In paper-boundary mode, nonzero cores run a dummy-forward warm-up before
+//   their first real window. In RTL-boundary mode, nonzero cores start with
+//   equal alpha metrics.
+//   CORE_ID=NUM_SISO-1 skips the last DBR and uses known terminal state
+//   β(S0)=0, β(S1..S7)=-∞.
 //
 // Window schedule (for NUM_WINDOWS=N):
-//   Slot 0:  FR=dummy,  BR=idle,  DBR=idle       [CORE_ID=0: FR=W1 directly]
 //   Slot 1:  FR=W1,     BR=idle,  DBR=W2'
 //   Slot 2:  FR=W2,     BR=W1,    DBR=W3'
 //   ...
@@ -41,19 +41,23 @@
 module bcjr_core #(
     parameter CORE_ID      = 0,
     parameter NUM_SISO     = 2,    // Total number of parallel SISO modules
-    parameter NUM_WINDOWS  = 103   // ceil(3072/30) for 6144/2 split
+    parameter ADDR_W       = 12,
+    parameter WIN_LEN      = 30,
+    parameter PAPER_BOUNDARY = 1,
+    parameter NUM_WINDOWS  = 54    // ceil((1600 + 3 tail)/30) for K=3200/N=2
 ) (
     input  wire                       clk,
     input  wire                       rst_n,
     input  wire                       start,
-    input  wire [11:0]                frame_len,
+    input  wire [ADDR_W-1:0]          output_len,
     output reg                        done,
 
     // LLR Memory Interface
     output reg                        llr_req,
-    output reg  [11:0]                fr_llr_addr,
-    output reg  [11:0]                br_llr_addr,
-    output reg  [11:0]                dbr_llr_addr,
+    output reg  [ADDR_W-1:0]          fr_llr_addr,
+    output reg  [ADDR_W-1:0]          br_llr_addr,
+    output reg  [ADDR_W-1:0]          dbr_llr_addr,
+    output wire                       fr_dummy_active,
     input  wire                       llr_valid,
     // FR LLR inputs
     input  wire signed [4:0]          fr_sys_odd,  fr_sys_even,
@@ -71,7 +75,9 @@ module bcjr_core #(
     // Extrinsic LLR output
     output reg  signed [5:0]          llr_extr_odd_out,
     output reg  signed [5:0]          llr_extr_even_out,
-    output reg  [11:0]                llr_out_addr,
+    output reg  signed [9:0]          llr_intr_odd_out,
+    output reg  signed [9:0]          llr_intr_even_out,
+    output reg  [ADDR_W-1:0]          llr_out_addr,
     output reg                        llr_out_valid
 );
 
@@ -83,11 +89,11 @@ module bcjr_core #(
     localparam SM_W        = 10;
     localparam BM_R2_W     = 7;
     localparam BM_R4_W     = 8;
-    localparam WIN_LEN     = 30;
-    localparam WIN_LEN_R4  = 15;
+    localparam [3:0] WIN_LEN_R4 = WIN_LEN / 2;
     localparam NUM_STATES  = 8;
-    localparam ADDR_W      = 12;
     localparam signed [SM_W-1:0] NEG_INF = -10'sd256;
+    localparam integer LLR_PIPE_LATENCY = 5;
+    localparam integer LLR_PIPE_LAST    = LLR_PIPE_LATENCY - 1;
 
     // =========================================================================
     // FSM States
@@ -131,6 +137,7 @@ module bcjr_core #(
     reg dbr_init_sm;
     reg br_load_beta;
     reg br_phase_active;
+    reg br_drain_pending;
 
     // =========================================================================
     // Forward Recursion Unit
@@ -478,6 +485,7 @@ module bcjr_core #(
     // LLR Compute Unit
     // =========================================================================
     wire signed [EXTR_W-1:0] llr_extr_odd_w, llr_extr_even_w;
+    wire signed [SM_W-1:0]   llr_intr_odd_w, llr_intr_even_w;
     wire llr_valid_w;
 
     llr_compute u_llr (
@@ -511,34 +519,70 @@ module bcjr_core #(
         .sys_even_k(br_sys_even_r), .apr_even_k(br_apr_even_r),
         .llr_extr_odd(llr_extr_odd_w),
         .llr_extr_even(llr_extr_even_w),
+        .llr_intr_odd(llr_intr_odd_w),
+        .llr_intr_even(llr_intr_even_w),
         .llr_valid(llr_valid_w)
     );
 
     // =========================================================================
     // LLR output address pipeline
     // =========================================================================
-    reg [3:0] llr_step_pipe;
+    reg [3:0] llr_step_pipe [0:LLR_PIPE_LAST];
+    reg [6:0] llr_win_idx_pipe [0:LLR_PIPE_LAST];
+    reg       llr_active_pipe [0:LLR_PIPE_LAST];
+    integer   llr_pipe_i;
+
+    reg                      llr_emit_candidate_r;
+    reg [ADDR_W-1:0]         llr_emit_addr_r;
+    reg signed [EXTR_W-1:0]  llr_emit_extr_odd_r;
+    reg signed [EXTR_W-1:0]  llr_emit_extr_even_r;
+    reg signed [SM_W-1:0]    llr_emit_intr_odd_r;
+    reg signed [SM_W-1:0]    llr_emit_intr_even_r;
 
     always @(posedge clk) begin
-        if (!rst_n)
-            llr_step_pipe <= 4'd0;
-        else
-            llr_step_pipe <= br_cur_step;
+        if (!rst_n) begin
+            for (llr_pipe_i = 0; llr_pipe_i < LLR_PIPE_LATENCY; llr_pipe_i = llr_pipe_i + 1) begin
+                llr_step_pipe[llr_pipe_i]    <= 4'd0;
+                llr_win_idx_pipe[llr_pipe_i] <= 7'd0;
+                llr_active_pipe[llr_pipe_i]  <= 1'b0;
+            end
+        end else begin
+            llr_step_pipe[0]    <= br_cur_step;
+            llr_win_idx_pipe[0] <= br_win_idx;
+            llr_active_pipe[0]  <= br_beta_valid && br_active_r;
+            for (llr_pipe_i = 1; llr_pipe_i < LLR_PIPE_LATENCY; llr_pipe_i = llr_pipe_i + 1) begin
+                llr_step_pipe[llr_pipe_i]    <= llr_step_pipe[llr_pipe_i-1];
+                llr_win_idx_pipe[llr_pipe_i] <= llr_win_idx_pipe[llr_pipe_i-1];
+                llr_active_pipe[llr_pipe_i]  <= llr_active_pipe[llr_pipe_i-1];
+            end
+        end
     end
+
+    wire [ADDR_W-1:0] llr_pipe_addr =
+        (llr_win_idx_pipe[LLR_PIPE_LAST] - 7'd1) * WIN_LEN
+      + llr_step_pipe[LLR_PIPE_LAST] * 2;
+
+    wire llr_pipe_busy =
+        br_beta_valid | llr_valid_w |
+        llr_active_pipe[0] | llr_active_pipe[1] | llr_active_pipe[2] |
+        llr_active_pipe[3] | llr_active_pipe[4] |
+        llr_emit_candidate_r;
 
     // =========================================================================
     // Top-Level FSM
     //
-    // CORE_ID=0: skips dummy forward (fr_win_idx starts at 1)
-    //            FR init sets α(S0)=0, α(others)=NEG_INF
-    // CORE_ID=7: last window's BR uses known terminal β(S0)=0, β(others)=NEG_INF
-    //            instead of DBR output
+    // CORE_ID=0: FR init sets α(S0)=0, α(others)=NEG_INF.
+    // Last core: last window's BR uses known terminal β(S0)=0,
+    //            β(others)=NEG_INF instead of DBR output.
     // =========================================================================
 
     // Determine whether the last BR window needs known terminal beta
     // Last core is CORE_ID == NUM_SISO-1
     wire is_last_core = (CORE_ID == NUM_SISO - 1);
     wire use_known_terminal_beta = is_last_core && (br_win_idx == NUM_WINDOWS);
+    wire is_paper_boundary = (PAPER_BOUNDARY != 0);
+    wire is_prologue_slot = is_paper_boundary && (fr_win_idx == 7'd0);
+    assign fr_dummy_active = is_prologue_slot && fr_active_r;
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -552,17 +596,26 @@ module bcjr_core #(
             dbr_active_r   <= 1'b0;
             done           <= 1'b0;
             llr_req        <= 1'b0;
-            fr_llr_addr    <= 12'd0;
-            br_llr_addr    <= 12'd0;
-            dbr_llr_addr   <= 12'd0;
+            fr_llr_addr    <= {ADDR_W{1'b0}};
+            br_llr_addr    <= {ADDR_W{1'b0}};
+            dbr_llr_addr   <= {ADDR_W{1'b0}};
             llr_out_valid  <= 1'b0;
-            llr_out_addr   <= 12'd0;
+            llr_out_addr   <= {ADDR_W{1'b0}};
             llr_extr_odd_out  <= 6'sd0;
             llr_extr_even_out <= 6'sd0;
+            llr_intr_odd_out  <= 10'sd0;
+            llr_intr_even_out <= 10'sd0;
+            llr_emit_candidate_r <= 1'b0;
+            llr_emit_addr_r      <= {ADDR_W{1'b0}};
+            llr_emit_extr_odd_r  <= {EXTR_W{1'b0}};
+            llr_emit_extr_even_r <= {EXTR_W{1'b0}};
+            llr_emit_intr_odd_r  <= {SM_W{1'b0}};
+            llr_emit_intr_even_r <= {SM_W{1'b0}};
             fr_init_sm     <= 1'b0;
             dbr_init_sm    <= 1'b0;
             br_load_beta   <= 1'b0;
             br_phase_active <= 1'b0;
+            br_drain_pending <= 1'b0;
             br_beta_init_reg_0 <= 10'sd0; br_beta_init_reg_1 <= 10'sd0;
             br_beta_init_reg_2 <= 10'sd0; br_beta_init_reg_3 <= 10'sd0;
             br_beta_init_reg_4 <= 10'sd0; br_beta_init_reg_5 <= 10'sd0;
@@ -580,6 +633,7 @@ module bcjr_core #(
             // Default deassertions
             done          <= 1'b0;
             llr_out_valid <= 1'b0;
+            llr_emit_candidate_r <= 1'b0;
             fr_init_sm    <= 1'b0;
             dbr_init_sm   <= 1'b0;
             br_load_beta  <= 1'b0;
@@ -596,15 +650,28 @@ module bcjr_core #(
                 br_beta_init_reg_7 <= dbr_final_beta_7;
             end
 
-            // LLR output from pipeline — filter addresses beyond frame_len
-            if (llr_valid_w && br_active_r) begin
-                llr_out_addr <= (br_win_idx - 7'd1) * WIN_LEN + {8'd0, llr_step_pipe} * 2;
+            // LLR output from pipeline — filter addresses beyond output_len.
+            // The top level may still feed valid tail trellis metrics beyond
+            // output_len, but tail positions are not emitted as decisions.
+            if (llr_emit_candidate_r) begin
+                llr_out_addr <= llr_emit_addr_r;
                 // Only emit valid output for addresses within this core's frame
-                if (((br_win_idx - 7'd1) * WIN_LEN + {8'd0, llr_step_pipe} * 2 + 12'd1) <= frame_len) begin
+                if ((llr_emit_addr_r + 1'b1) <= output_len) begin
                     llr_out_valid     <= 1'b1;
-                    llr_extr_odd_out  <= llr_extr_odd_w;
-                    llr_extr_even_out <= llr_extr_even_w;
+                    llr_extr_odd_out  <= llr_emit_extr_odd_r;
+                    llr_extr_even_out <= llr_emit_extr_even_r;
+                    llr_intr_odd_out  <= llr_emit_intr_odd_r;
+                    llr_intr_even_out <= llr_emit_intr_even_r;
                 end
+            end
+
+            if (llr_valid_w && llr_active_pipe[LLR_PIPE_LAST]) begin
+                llr_emit_candidate_r <= 1'b1;
+                llr_emit_addr_r      <= llr_pipe_addr;
+                llr_emit_extr_odd_r  <= llr_extr_odd_w;
+                llr_emit_extr_even_r <= llr_extr_even_w;
+                llr_emit_intr_odd_r  <= llr_intr_odd_w;
+                llr_emit_intr_even_r <= llr_intr_even_w;
             end
 
             case (state)
@@ -612,27 +679,31 @@ module bcjr_core #(
                 ST_IDLE: begin
                     br_phase_active <= 1'b0;
                     if (start) begin
-                        // --- CORE_ID specific start ---
-                        if (CORE_ID == 0) begin
-                            // Skip dummy forward: start directly at W1
+                        if (is_paper_boundary) begin
+                            // One timing prologue keeps the folded top-level
+                            // write-back aligned. Nonzero cores run dummy FR
+                            // over the previous segment; core 0 idles with its
+                            // known alpha state loaded.
+                            fr_win_idx   <= 7'd0;
+                            br_win_idx   <= 7'd0;
+                            dbr_win_idx  <= 7'd0;
+                            fr_active_r  <= (CORE_ID != 0);
+                            br_active_r  <= 1'b0;
+                            dbr_active_r <= 1'b0;
+                            fr_init_sm   <= 1'b1;
+                            dbr_init_sm  <= 1'b0;
+                        end else begin
+                            // Existing lockstep approximation.
                             fr_win_idx   <= 7'd1;
                             br_win_idx   <= 7'd0;  // inactive
                             dbr_win_idx  <= 7'd2;  // DBR starts at W2'
                             fr_active_r  <= 1'b1;
                             br_active_r  <= 1'b0;
                             dbr_active_r <= 1'b1;
-                        end else begin
-                            // Other cores: run dummy forward on prev segment's last window
-                            fr_win_idx   <= 7'd0;  // dummy forward
-                            br_win_idx   <= 7'd0;  // inactive
-                            dbr_win_idx  <= 7'd0;  // DBR inactive on first slot
-                            fr_active_r  <= 1'b1;
-                            br_active_r  <= 1'b0;
-                            dbr_active_r <= 1'b0;
+                            fr_init_sm   <= 1'b1;  // Load initial state metrics
+                            dbr_init_sm  <= 1'b1;  // DBR initialized at start of first window
                         end
                         step_cnt       <= 4'd0;
-                        fr_init_sm     <= 1'b1;  // Load initial state metrics
-                        dbr_init_sm    <= 1'b1;  // DBR initialized at start of first window
                         state          <= ST_LLR_REQ;
                     end
                 end
@@ -644,23 +715,22 @@ module bcjr_core #(
                     // FR address computation
                     if (fr_active_r) begin
                         if (fr_win_idx == 7'd0) begin
-                            // Dummy forward: data from previous segment's last window
-                            // Address provided by external controller (out-of-range for this segment)
-                            fr_llr_addr <= {8'd0, step_cnt} * 2;
+                            // Dummy forward: previous segment's last window.
+                            fr_llr_addr <= output_len - WIN_LEN + step_cnt * 2;
                         end else begin
-                            fr_llr_addr <= (fr_win_idx - 7'd1) * WIN_LEN + {8'd0, step_cnt} * 2;
+                            fr_llr_addr <= (fr_win_idx - 7'd1) * WIN_LEN + step_cnt * 2;
                         end
                     end
 
                     if (br_active_r) begin
                         br_llr_addr <= (br_win_idx - 7'd1) * WIN_LEN
-                                     + {8'd0, (WIN_LEN_R4 - 4'd1 - step_cnt)} * 2;
+                                     + (WIN_LEN_R4 - 4'd1 - step_cnt) * 2;
                     end
 
                     if (dbr_active_r) begin
                         // DBR window N' processes data from window N (which is the NEXT window)
                         dbr_llr_addr <= (dbr_win_idx - 7'd1) * WIN_LEN
-                                      + {8'd0, (WIN_LEN_R4 - 4'd1 - step_cnt)} * 2;
+                                      + (WIN_LEN_R4 - 4'd1 - step_cnt) * 2;
                     end
 
                     state <= ST_LLR_WAIT;
@@ -701,6 +771,7 @@ module bcjr_core #(
                             end
                             br_load_beta    <= 1'b1;
                             br_phase_active <= 1'b1;
+                            br_drain_pending <= 1'b0;
                             state           <= ST_LLR_OUT;
                         end else begin
                             state <= ST_WIN_DONE;
@@ -717,6 +788,11 @@ module bcjr_core #(
                     br_load_beta <= 1'b0;
                     if (br_window_done) begin
                         br_phase_active <= 1'b0;
+                        br_drain_pending <= 1'b1;
+                    end
+
+                    if (br_drain_pending && !llr_pipe_busy) begin
+                        br_drain_pending <= 1'b0;
                         state <= ST_WIN_DONE;
                     end
                 end
@@ -725,49 +801,61 @@ module bcjr_core #(
                 ST_WIN_DONE: begin
                     br_phase_active <= 1'b0;
 
-                    // Advance window indices
-                    fr_win_idx  <= fr_win_idx + 7'd1;
-                    br_win_idx  <= br_win_idx + 7'd1;
-
-                    // DBR scheduling
-                    if (CORE_ID == 0) begin
-                        // CORE_ID 0: DBR started at W2', advance normally
-                        if (dbr_win_idx < NUM_WINDOWS + 1)
-                            dbr_win_idx <= dbr_win_idx + 7'd1;
-                        else
-                            dbr_win_idx <= 7'd0;
+                    // Nonzero cores spend the first slot on dummy forward warm-up.
+                    // The next slot must run FR=W1 and DBR=W2 while BR stays idle;
+                    // BR=W1 can only start after W1 alpha/gamma have been written.
+                    if (is_paper_boundary && (fr_win_idx == 7'd0)) begin
+                        fr_win_idx   <= 7'd1;
+                        br_win_idx   <= 7'd0;
+                        dbr_win_idx  <= 7'd2;
+                        fr_active_r  <= 1'b1;
+                        br_active_r  <= 1'b0;
+                        dbr_active_r <= (NUM_WINDOWS >= 2);
+                        step_cnt     <= 4'd0;
+                        dbr_init_sm  <= 1'b1;
+                        state        <= ST_LLR_REQ;
                     end else begin
-                        // Other cores: DBR starts at W2' after slot 0
-                        if (dbr_win_idx == 7'd0)
-                            dbr_win_idx <= 7'd2;
-                        else if (dbr_win_idx < NUM_WINDOWS + 1)
-                            dbr_win_idx <= dbr_win_idx + 7'd1;
+                        // Advance window indices
+                        fr_win_idx  <= fr_win_idx + 7'd1;
+                        br_win_idx  <= br_win_idx + 7'd1;
+
+                        // DBR scheduling
+                        if (CORE_ID == 0) begin
+                            // CORE_ID 0: DBR started at W2', advance normally
+                            if (dbr_win_idx < NUM_WINDOWS + 1)
+                                dbr_win_idx <= dbr_win_idx + 7'd1;
+                            else
+                                dbr_win_idx <= 7'd0;
+                        end else begin
+                            if (dbr_win_idx < NUM_WINDOWS + 1)
+                                dbr_win_idx <= dbr_win_idx + 7'd1;
+                            else
+                                dbr_win_idx <= 7'd0;
+                        end
+
+                        // Update activation flags
+                        fr_active_r  <= (fr_win_idx + 7'd1 <= NUM_WINDOWS);
+                        br_active_r  <= (br_win_idx + 7'd1 >= 7'd1) && (br_win_idx + 7'd1 <= NUM_WINDOWS);
+
+                        // DBR activation: active for windows 2..NUM_WINDOWS+1
+                        // Last core: last window doesn't need DBR (known terminal state)
+                        if (is_last_core && (dbr_win_idx >= NUM_WINDOWS))
+                            dbr_active_r <= 1'b0;
+                        else if (dbr_win_idx + 7'd1 >= 7'd2 && dbr_win_idx + 7'd1 <= NUM_WINDOWS + 1)
+                            dbr_active_r <= 1'b1;
                         else
-                            dbr_win_idx <= 7'd0;
-                    end
+                            dbr_active_r <= 1'b0;
 
-                    // Update activation flags
-                    fr_active_r  <= (fr_win_idx + 7'd1 <= NUM_WINDOWS);
-                    br_active_r  <= (br_win_idx + 7'd1 >= 7'd1) && (br_win_idx + 7'd1 <= NUM_WINDOWS);
+                        step_cnt <= 4'd0;
 
-                    // DBR activation: active for windows 2..NUM_WINDOWS+1
-                    // Last core: last window doesn't need DBR (known terminal state)
-                    if (is_last_core && (dbr_win_idx >= NUM_WINDOWS))
-                        dbr_active_r <= 1'b0;
-                    else if (dbr_win_idx + 7'd1 >= 7'd2 && dbr_win_idx + 7'd1 <= NUM_WINDOWS + 1)
-                        dbr_active_r <= 1'b1;
-                    else
-                        dbr_active_r <= 1'b0;
-
-                    step_cnt <= 4'd0;
-
-                    // Check if all done
-                    if (br_win_idx >= NUM_WINDOWS) begin
-                        done  <= 1'b1;
-                        state <= ST_IDLE;
-                    end else begin
-                        dbr_init_sm <= 1'b1;
-                        state <= ST_LLR_REQ;
+                        // Check if all done
+                        if (br_win_idx >= NUM_WINDOWS) begin
+                            done  <= 1'b1;
+                            state <= ST_IDLE;
+                        end else begin
+                            dbr_init_sm <= 1'b1;
+                            state <= ST_LLR_REQ;
+                        end
                     end
                 end
 

@@ -1,0 +1,73 @@
+Windowed Parallel Deterministic BRAM Comparison
+====================================================
+Data directory: C:\VAMSHI\IIT Mandi Academic Folder\IITM 6th Sem\DVAD\BITS_LTE_Parallel_Turbo_Decoder\data
+K: 3200
+NUM_SISO: 2
+Segment length: 1600
+QPP f1/f2: 111/240
+Tail trellis steps: 3
+Decoder: radix4
+Window size: 30
+Half iterations: 11
+Quantized: True
+Extrinsic scale: 0.6875
+Boundary mode: paper
+
+Input source
+  sys1: sys_even_ram.hex + sys_odd_ram.hex
+  par1: par1_even_ram.hex + par1_odd_ram.hex
+  sys2/interleaved systematic: sys_ilv_even_ram.hex + sys_ilv_odd_ram.hex
+  par2: par2_even_ram.hex + par2_odd_ram.hex
+
+Saved deterministic artifacts
+  windowed_input_sys1.txt
+  windowed_input_par1.txt
+  windowed_input_sys2.txt
+  windowed_input_par2.txt
+  radix4_final_intrinsic.txt
+  radix4_final_hard_bits.txt
+  radix4_final_extrinsic.txt
+
+BER
+  channel hard decisions from sys1: 527/3200 = 0.164687
+  windowed_parallel_ber.py radix4 final L_D: 0/3200 = 0.000000
+
+Vector metadata
+  K=3200
+  NUM_SISO=2
+  SEG_LEN=1600
+  QPP_F1=111
+  QPP_F2=240
+  EBN0_DB=1.0
+  CODE_RATE=0.375
+  SEED=42
+  TAIL_LEN=3
+  CHANNEL_ERRORS=534
+  CHANNEL_BER=0.166875000000
+  QUANT_SYS_ERRORS=527
+  QUANT_SYS_BER=0.164687500000
+
+Comparison note
+  This is the RTL bit-accurate radix-4 fixed-point mode in scripts/windowed_parallel_ber.py.
+  It reuses the exact RTL BRAM LLR inputs and should match RTL/turbo_ref_model.py for the N=2 target.
+
+RTL final intrinsic comparison
+  intrinsic value mismatches: 0/3200
+  hard-bit mismatches: 0/3200
+  max |difference|: 0
+  other final L_D BER: 0/3200 = 0.000000
+
+turbo_ref_model.py final intrinsic comparison
+  intrinsic value mismatches: 0/3200
+  hard-bit mismatches: 0/3200
+  max |difference|: 0
+  other final L_D BER: 0/3200 = 0.000000
+
+RTL final extrinsic comparison
+  value mismatches: 0/3200
+  max |difference|: 0
+
+turbo_ref_model.py final extrinsic comparison
+  value mismatches: 0/3200
+  max |difference|: 0
+

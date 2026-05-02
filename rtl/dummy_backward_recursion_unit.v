@@ -126,6 +126,27 @@ module dummy_backward_recursion_unit (
         .bm_r4_28(bm_r4_28), .bm_r4_29(bm_r4_29), .bm_r4_30(bm_r4_30), .bm_r4_31(bm_r4_31)
     );
 
+    wire signed [BM_R4_W-1:0] bm_r4_w [0:31];
+    reg  signed [BM_R4_W-1:0] bm_r4_r [0:31];
+    reg                       bm_valid_r;
+
+    assign bm_r4_w[0]  = bm_r4_0;  assign bm_r4_w[1]  = bm_r4_1;
+    assign bm_r4_w[2]  = bm_r4_2;  assign bm_r4_w[3]  = bm_r4_3;
+    assign bm_r4_w[4]  = bm_r4_4;  assign bm_r4_w[5]  = bm_r4_5;
+    assign bm_r4_w[6]  = bm_r4_6;  assign bm_r4_w[7]  = bm_r4_7;
+    assign bm_r4_w[8]  = bm_r4_8;  assign bm_r4_w[9]  = bm_r4_9;
+    assign bm_r4_w[10] = bm_r4_10; assign bm_r4_w[11] = bm_r4_11;
+    assign bm_r4_w[12] = bm_r4_12; assign bm_r4_w[13] = bm_r4_13;
+    assign bm_r4_w[14] = bm_r4_14; assign bm_r4_w[15] = bm_r4_15;
+    assign bm_r4_w[16] = bm_r4_16; assign bm_r4_w[17] = bm_r4_17;
+    assign bm_r4_w[18] = bm_r4_18; assign bm_r4_w[19] = bm_r4_19;
+    assign bm_r4_w[20] = bm_r4_20; assign bm_r4_w[21] = bm_r4_21;
+    assign bm_r4_w[22] = bm_r4_22; assign bm_r4_w[23] = bm_r4_23;
+    assign bm_r4_w[24] = bm_r4_24; assign bm_r4_w[25] = bm_r4_25;
+    assign bm_r4_w[26] = bm_r4_26; assign bm_r4_w[27] = bm_r4_27;
+    assign bm_r4_w[28] = bm_r4_28; assign bm_r4_w[29] = bm_r4_29;
+    assign bm_r4_w[30] = bm_r4_30; assign bm_r4_w[31] = bm_r4_31;
+
     // =========================================================================
     // 8× ACS units (BACKWARD direction — transposed wiring)
     // Uses load_init to initialize all SM to 0 at start of each window.
@@ -137,13 +158,14 @@ module dummy_backward_recursion_unit (
     // All DBR states init to 0 (equal probability — no state knowledge)
     wire signed [SM_W-1:0] dbr_init_val = 10'sd0;
 
-    // ACS enable: active only when running and not initializing
-    wire acs_en = active & running;
+    // ACS enable is delayed by one cycle so radix-4 BMs are registered first.
+    wire bm_capture = active & running;
+    wire acs_en     = bm_valid_r;
 
     // ACS for s''=000: successors s ∈ {0,2,4,6}, using bm_r4[s][0]
     acs_r4 u_acs_0 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_0),  .bm_1(bm_r4_8),  .bm_2(bm_r4_16), .bm_3(bm_r4_24),
+        .bm_0(bm_r4_r[0]),  .bm_1(bm_r4_r[8]),  .bm_2(bm_r4_r[16]), .bm_3(bm_r4_r[24]),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[0])
@@ -151,7 +173,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=001: using bm_r4[s][1] for s ∈ {0,2,4,6}
     acs_r4 u_acs_1 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_1),  .bm_1(bm_r4_9),  .bm_2(bm_r4_17), .bm_3(bm_r4_25),
+        .bm_0(bm_r4_r[1]),  .bm_1(bm_r4_r[9]),  .bm_2(bm_r4_r[17]), .bm_3(bm_r4_r[25]),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[1])
@@ -159,7 +181,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=010
     acs_r4 u_acs_2 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_2),  .bm_1(bm_r4_10), .bm_2(bm_r4_18), .bm_3(bm_r4_26),
+        .bm_0(bm_r4_r[2]),  .bm_1(bm_r4_r[10]), .bm_2(bm_r4_r[18]), .bm_3(bm_r4_r[26]),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[2])
@@ -167,7 +189,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=011
     acs_r4 u_acs_3 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_3),  .bm_1(bm_r4_11), .bm_2(bm_r4_19), .bm_3(bm_r4_27),
+        .bm_0(bm_r4_r[3]),  .bm_1(bm_r4_r[11]), .bm_2(bm_r4_r[19]), .bm_3(bm_r4_r[27]),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[3])
@@ -175,7 +197,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=100: successors s ∈ {1,3,5,7}, using bm_r4[s][0]
     acs_r4 u_acs_4 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_4),  .bm_1(bm_r4_12), .bm_2(bm_r4_20), .bm_3(bm_r4_28),
+        .bm_0(bm_r4_r[4]),  .bm_1(bm_r4_r[12]), .bm_2(bm_r4_r[20]), .bm_3(bm_r4_r[28]),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[4])
@@ -183,7 +205,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=101: using bm_r4[s][1] for s ∈ {1,3,5,7}
     acs_r4 u_acs_5 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_5),  .bm_1(bm_r4_13), .bm_2(bm_r4_21), .bm_3(bm_r4_29),
+        .bm_0(bm_r4_r[5]),  .bm_1(bm_r4_r[13]), .bm_2(bm_r4_r[21]), .bm_3(bm_r4_r[29]),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[5])
@@ -191,7 +213,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=110
     acs_r4 u_acs_6 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_6),  .bm_1(bm_r4_14), .bm_2(bm_r4_22), .bm_3(bm_r4_30),
+        .bm_0(bm_r4_r[6]),  .bm_1(bm_r4_r[14]), .bm_2(bm_r4_r[22]), .bm_3(bm_r4_r[30]),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[6])
@@ -199,7 +221,7 @@ module dummy_backward_recursion_unit (
     // ACS for s''=111
     acs_r4 u_acs_7 (
         .clk(clk), .rst_n(rst_n), .enable(acs_en),
-        .bm_0(bm_r4_7),  .bm_1(bm_r4_15), .bm_2(bm_r4_23), .bm_3(bm_r4_31),
+        .bm_0(bm_r4_r[7]),  .bm_1(bm_r4_r[15]), .bm_2(bm_r4_r[23]), .bm_3(bm_r4_r[31]),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(dbr_init_val), .load_init(init_sm),
         .sm_out(sm[7])
@@ -213,6 +235,7 @@ module dummy_backward_recursion_unit (
     //                   the result of the LAST ACS update (not the pre-update)
     // =========================================================================
     reg [3:0] step_cnt;
+    integer bm_i;
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -220,12 +243,22 @@ module dummy_backward_recursion_unit (
             window_done     <= 1'b0;
             running         <= 1'b0;
             capture_pending <= 1'b0;
+            bm_valid_r      <= 1'b0;
+            for (bm_i = 0; bm_i < 32; bm_i = bm_i + 1)
+                bm_r4_r[bm_i] <= {BM_R4_W{1'b0}};
             final_beta_0    <= 10'sd0; final_beta_1 <= 10'sd0;
             final_beta_2    <= 10'sd0; final_beta_3 <= 10'sd0;
             final_beta_4    <= 10'sd0; final_beta_5 <= 10'sd0;
             final_beta_6    <= 10'sd0; final_beta_7 <= 10'sd0;
         end else begin
             window_done <= 1'b0;
+            bm_valid_r  <= 1'b0;
+
+            if (bm_capture) begin
+                bm_valid_r <= 1'b1;
+                for (bm_i = 0; bm_i < 32; bm_i = bm_i + 1)
+                    bm_r4_r[bm_i] <= bm_r4_w[bm_i];
+            end
 
             // ----- Delayed capture: 1 cycle after last ACS step -----
             // sm[] now holds the result of all 15 ACS updates
@@ -241,12 +274,14 @@ module dummy_backward_recursion_unit (
 
             // ----- Initialization: load all SMs to 0, begin window -----
             if (init_sm) begin
-                running  <= 1'b1;
-                step_cnt <= 4'd0;
+                running         <= 1'b1;
+                step_cnt        <= 4'd0;
+                capture_pending <= 1'b0;
+                bm_valid_r      <= 1'b0;
             end
 
-            // ----- Step counter: runs on each active pulse while running -----
-            if (active && running) begin
+            // ----- Step counter: counts delayed ACS updates, not BM captures -----
+            if (bm_valid_r) begin
                 if (step_cnt == win_len_r4 - 4'd1) begin
                     capture_pending <= 1'b1;
                     step_cnt        <= 4'd0;

@@ -1,0 +1,87 @@
+Windowed Parallel Deterministic BRAM Comparison
+====================================================
+Data directory: C:\VAMSHI\IIT Mandi Academic Folder\IITM 6th Sem\DVAD\BITS_LTE_Parallel_Turbo_Decoder\data
+K: 3200
+NUM_SISO: 2
+Segment length: 1600
+QPP f1/f2: 111/240
+Tail trellis steps: 3
+Decoder: windowed
+Window size: 30
+Half iterations: 11
+Quantized: True
+Extrinsic scale: 0.6875
+Boundary mode: paper
+
+Input source
+  sys1: sys_even_ram.hex + sys_odd_ram.hex
+  par1: par1_even_ram.hex + par1_odd_ram.hex
+  sys2/interleaved systematic: sys_ilv_even_ram.hex + sys_ilv_odd_ram.hex
+  par2: par2_even_ram.hex + par2_odd_ram.hex
+
+Saved deterministic artifacts
+  windowed_input_sys1.txt
+  windowed_input_par1.txt
+  windowed_input_sys2.txt
+  windowed_input_par2.txt
+  windowed_final_intrinsic.txt
+  windowed_final_hard_bits.txt
+
+BER
+  channel hard decisions from sys1: 577/3200 = 0.180312
+  windowed_parallel_ber.py final L_D: 105/3200 = 0.032813
+
+Vector metadata
+  K=3200
+  NUM_SISO=2
+  SEG_LEN=1600
+  QPP_F1=111
+  QPP_F2=240
+  EBN0_DB=1.0
+  CODE_RATE=0.3333333333333333
+  SEED=42
+  TAIL_LEN=3
+  CHANNEL_ERRORS=588
+  CHANNEL_BER=0.183750000000
+  QUANT_SYS_ERRORS=577
+  QUANT_SYS_BER=0.180312500000
+
+Comparison note
+  This is the paper-style algorithm model in scripts/windowed_parallel_ber.py.
+  It reuses the exact RTL BRAM LLR inputs, but it is still a scalar trellis model.
+  turbo_ref_model.py remains the RTL bit-order/fixed-point bridge for exact RTL value matching.
+
+RTL final intrinsic comparison
+  intrinsic value mismatches: 1419/3200
+  hard-bit mismatches: 35/3200
+  max |difference|: 108
+  other final L_D BER: 90/3200 = 0.028125
+  first value mismatches:
+    i=5 model=-146 other=-142 hard_model=1 hard_other=1
+    i=6 model=146 other=142 hard_model=0 hard_other=0
+    i=28 model=-90 other=-100 hard_model=1 hard_other=1
+    i=30 model=90 other=94 hard_model=0 hard_other=0
+    i=31 model=90 other=98 hard_model=0 hard_other=0
+    i=34 model=-94 other=-98 hard_model=1 hard_other=1
+    i=35 model=78 other=100 hard_model=0 hard_other=0
+    i=36 model=-78 other=-100 hard_model=1 hard_other=1
+    i=39 model=106 other=112 hard_model=0 hard_other=0
+    i=42 model=-102 other=-86 hard_model=1 hard_other=1
+
+turbo_ref_model.py final intrinsic comparison
+  intrinsic value mismatches: 1419/3200
+  hard-bit mismatches: 35/3200
+  max |difference|: 108
+  other final L_D BER: 90/3200 = 0.028125
+  first value mismatches:
+    i=5 model=-146 other=-142 hard_model=1 hard_other=1
+    i=6 model=146 other=142 hard_model=0 hard_other=0
+    i=28 model=-90 other=-100 hard_model=1 hard_other=1
+    i=30 model=90 other=94 hard_model=0 hard_other=0
+    i=31 model=90 other=98 hard_model=0 hard_other=0
+    i=34 model=-94 other=-98 hard_model=1 hard_other=1
+    i=35 model=78 other=100 hard_model=0 hard_other=0
+    i=36 model=-78 other=-100 hard_model=1 hard_other=1
+    i=39 model=106 other=112 hard_model=0 hard_other=0
+    i=42 model=-102 other=-86 hard_model=1 hard_other=1
+

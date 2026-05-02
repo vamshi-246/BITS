@@ -1,0 +1,30 @@
+LTE Parallel Turbo Decoder BER Results
+========================================
+Data directory: C:\VAMSHI\IIT Mandi Academic Folder\IITM 6th Sem\DVAD\BITS_LTE_Parallel_Turbo_Decoder\data
+K: 6144
+Tail trellis steps: 3
+Boundary mode: paper
+Half iterations: 11
+
+BER is computed as original transmitted bits versus hard decisions
+from the final intrinsic decision LLR L_D after the last half-iteration.
+
+Channel and Reference
+  Channel hard decisions: 1161/6144 = 0.188965
+  Python reference final L_D: 157/6144 = 0.025553
+
+RTL Final Intrinsic BER
+  RTL final L_D: 157/6144 = 0.025553
+  RTL-vs-reference intrinsic mismatches: 0/6144
+  RTL-vs-reference hard-bit mismatches: 0/6144
+  RTL-vs-reference max |difference|: 0
+
+RTL output files
+  rtl_final_intrinsic.txt: signed final L_D values from RTL simulation
+  rtl_final_hard_bits.txt: hard decisions from RTL final L_D
+
+RTL Final Extrinsic Comparison
+  Value mismatches: 0/6144
+  Sign mismatches: 0/6144
+  Max |difference|: 0
+

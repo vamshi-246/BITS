@@ -1,0 +1,1022 @@
+IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005 921
+Area-Efﬁcient High-Throughput
+MAP Decoder Architectures
+Seok-Jun Lee , Member, IEEE , Naresh R. Shanbhag , Senior Member, IEEE , and
+Andrew C. Singer , Senior Member, IEEE
+Abstract— Iterative decoders such as turbo decoders have be-
+come integral components of modern broadband communicationsystems because of their ability to provide substantial coding gains.A key computational kernel in iterative decoders is the maximuma posteriori probability (MAP) decoder. The MAP decoder is re-
+cursive and complex, which makes high-speed implementations ex-
+tremely difﬁcult to realize. In this paper, we present block-inter-
+leaved pipelining (BIP) as a new high-throughput technique for
+MAP decoders. An area-efﬁcient symbol-based BIP MAP decoderarchitecture is proposed by combining BIP with the well-knownlook-ahead computation. These architectures are compared withconventional parallel architectures in terms of speed-up, memoryand logic complexity, and area. Compared to the parallel architec-ture, the BIP architecture provides the same speed-up with a re-duction in logic complexity by a factor of
+, where
+ is the level
+of parallelism. The symbol-based architecture provides a speed-upin the range from 1 to 2 with a logic complexity that grows ex-ponentially with
+and a state metric storage requirement that
+is reduced by a factor of
+ as compared to a parallel architec-
+ture. The symbol-based BIP architecture provides speed-up in therange
+to /50
+ with an exponentially higher logic complexity
+and a reduced memory complexity compared to a parallel archi-tecture. These high-throughput architectures are synthesized in a2.5-V 0.25-
+m CMOS standard cell library and post-layout sim-
+ulations are conducted. For turbo decoder applications, we ﬁndthat the BIP architecture provides a throughput gain of 1.96 at thecost of 63% area overhead. For turbo equalizer applications, the
+symbol-based BIP architecture enables us to achieve a throughput
+gain of 1.79 with an area savings of 25%.
+Index Terms— Area efﬁcient, block-interleaved pipelining, high
+throughput, parallel processing, pipeline, symbol-based decoding,turbo decoder, turbo equalizer.
+I. INTRODUCTION
+THE TURBO principle ﬁrst introduced in [1] has been
+adopted in a variety of communication systems. It has
+been shown that turbo decoding schemes for decoding parallelor serial concatenated convolutional codes [2] and low-density
+parity check codes [3] approach Shannon’s limit for addi-
+tive white Gaussian noise (AWGN) channels. A soft-inputsoft-output (SISO) equalizer can be combined with a SISO
+Manuscript received July 17, 2003; revised June 2, 2004. This material is
+based upon work supported by the National Science Foundation under Grant
+CCR 99-79381 and ITR 00-85929.
+S.-J. Lee is with the Communication Systems Laboratory, DSP Solution
+R&D Center, Texas Instruments Incorporated, Dallas, TX 75243 USA (e-mail:
+s-lee8@ti.com).
+N. R. Shanbhag and A. C. Singer are with the Coordinated Science Labo-
+ratory, Electrical and Computer Engineering Department, University of Illinoisat Urbana-Champaign, Urbana, IL 61801 USA (e-mail: shanbhag@uiuc.edu;
+acsinger@uiuc.edu).
+Digital Object Identiﬁer 10.1109/TVLSI.2005.853604decoder to form a turbo equalizer [4]. In the presence of
+intersymbol interference (ISI) caused by frequency selective
+channels and high-density read channels, a turbo equalizerprovides additional coding gain beyond that obtained fromseparate equalization and decoding [4]–[8]. Turbo multi-user
+detection schemes have also been presented to combat multiple
+access interference [9]. These turbo decoding algorithms haveshown remarkable receiver performance improvements overhard decision decoding or separate equalization and decoding
+via soft information exchange between two independent SISO
+decoding blocks. This performance enhancement has leadturbo codes to be accepted as the coding technique in severalstandards such as Wideband CDMA (WCDMA), the 3rd
+Generation Partnership Project (3GPP) for IMT-2000 [10],
+Consultative Committee for Space Applications (CCSDS)telemetry channel coding [11], UMTS [12], DVB-RCS [13],and IEEE 802.16ab.
+Turbo decoders are composed of two or more constituent
+SISO decoders, which correspond to the component codes em-
+ployed in the transmitter, and an interconnection of these con-stituent decoders through an interleaver/deinterleaver. The de-coding algorithm employed in the constituent decoders is the
+maximum a posteriori probability (MAP) algorithm. The MAP
+algorithm provides a reliability metric, known as the log-like-lihood ratio (LLR), on the transmitted code symbols. The LLRoutput is employed by other constituent decoders, which attempt
+to improve their LLR estimates iteratively. However, the use of
+iterative processing results in a large computational and storagecomplexity and hence high power dissipation in the receiver.Therefore, low-power and high-throughput implementations for
+turbo decoders have recently been investigated [14]–[38] for
+wireless and broadband applications.
+Several high-throughput VLSI architectures of turbo de-
+coders have already appeared [25]–[37]. These high-throughputarchitectures can be classiﬁed into parallel processing
+[25]–[33], look-ahead computation [34]–[36], and algorithm re-
+formulation approaches [37]. Since the key algorithm employedin the constituent SISO processing blocks of turbo receivers(turbo decoders and equalizers) is the MAP algorithm, most
+research works have so far focused on high-throughput MAP
+decoder architectures which directly lead to high-throughputturbo receiver implementations. However, the recursive natureof the ACS kernel in MAP decoding algorithms has limited the
+reduction of the critical path delay. Hence, parallel processing
+[25]–[32] and look-ahead computation architectures [34]–[36]are viewed as practical approaches for high-throughputimplementations.
+1063-8210/$20.00 © 2005 IEEE
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 922 IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005
+In this paper, we propose a new critical path reduction
+technique referred to as block-interleaved pipelining (BIP),
+which leads to a pipelined ACS kernel with less area over-
+head compared to conventional high-throughput architectures.
+Note that the proposed idea of BIP can be applied along withthe above mentioned high-throughput techniques [25] –[28],
+[34]–[37]. We also propose a symbol-based MAP decoding
+architecture, where multiple bits are processed as a symbol.
+The symbol-based MAP architecture is derived by applyingthe look-ahead transform [39], [40] to the ACS recursion loop.In the context of a turbo equalizer, the symbol-based decoder
+architecture enables us to fold the operations of the SISO MAP
+equalizer and SISO MAP decoder on to the same hardwareplatform leading to savings in silicon area. We show that thethroughput of the symbol-based decoder architecture can be
+improved further by applying the BIP technique. Moreover, we
+also provide a detailed comparison of various high-throughputVLSI architectures in terms of their storage requirements, logiccomplexity, throughput gain, and silicon area. These analyses
+are validated via physical design examples for turbo decoders
+of parallel concatenated convolutional codes (PCCC) and turboequalizers.
+The rest of this paper is organized as follows. Section II
+describes the algorithm and VLSI architecture of SISO MAP
+decoding and explains the warm-up property which is exploited
+in both parallel and BIP architectures. In Section III, the pro-posed BIP transform is presented along with a brief summary
+of other architectural transforms that result in high-throughput
+implementations of recursive algorithms. In Section IV , weapply the techniques presented in Section III, to develop severalarchitectural solutions for high-throughput MAP decoding.
+Section V describes an area-ef ﬁcient high-throughput turbo
+decoder for PCCC and turbo equalizer implementations.
+II. MAP D
+ECODING
+In this section, the algorithm for the SISO MAP decoder is
+explained ﬁrst, followed by a description of a baseline VLSI
+architecture for a SISO MAP decoder.
+A. Algorithm
+Consider an
+ convolutional code. An encoder is
+aﬁnite state machine with
+ memory elements that en-
+codes a
+ -bit data symbol into an
+ -bit code symbol as shown
+in Fig. 1(a). The parameter
+ is called the constraint length of
+the code, and the code rate is de ﬁned as
+ .G i v e n
+a current state
+ and an input symbol
+ , there exists a
+unique pair consisting of a next state variable
+ and an
+output symbol
+ . Hence, for an input block of
+ data sym-
+bols
+ , the encoder starts from an initial
+state
+ at time
+ and performs
+ state transitions while
+generating
+ coded output symbols
+ .
+An ef ﬁcient method describing all possible state transitions is a
+trellis diagram. A section of the trellis of Fig. 1(a) is depicted in
+Fig. 1(c), where solid edges correspond to
+ and dashed
+edges correspond to
+ .
+Note that a discrete-time channel model [see Fig. 1(b)] can be
+considered as a (1,1,3) convolutional encoder, where the coded
+Fig. 1. Various encoder forms for MAP decoding. (a) A (2,1,3) convolutional
+encoder with two memory elements and modulo 2 adders. (b) A discrete
+time channel model with two memory elements and the channel vector
+/104 /61/91 /104
+ /59/104
+ /59/104
+ /93. (c) A trellis section resulting from state transitions of the
+encoders in (a) and (b).
+symbol is computed as
+ . Hence, the dis-
+crete-time channel causing ISI can be decoded via the decoding
+algorithm used for the code in Fig. 1(a).
+The observed sequence
+ at the re-
+ceiver is distorted due to transmission over AWGN and/or ISI
+channels. Thus, the decoding problem can be de ﬁned as deter-
+mining the transmitted sequence
+ given the noisy sequence
+ .
+Maximum likelihood (ML) decoding algorithm estimates thetransmitted symbols via searching the most likely trellis tran-
+sition path which maximizes the probability
+. However,
+the MAP decoding algorithm determines each of symbols
+ in-
+dependently via maximizing a posteriori probability
+ .
+The BCJR algorithm [41] solves the MAP decoding problem
+in a multiplicative form. From an implementation perspective,
+a log-domain MAP algorithm, called “log-MAP ”, has the ad-
+vantage that it can be formulated in terms of sums rather thanproducts.
+A log-MAP decoding algorithm estimates the LLR of data
+symbol
+denoted as
+ deﬁned below:
+(1)
+Deﬁning
+ , we rewrite
+ as
+(2)
+Typically, one term will dominate each sum leading to an
+approximation
+(3)
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. LEE et al. : AREA-EFFICIENT HIGH-THROUGHPUT MAP DECODER ARCHITECTURES 923
+The log-domain probability
+ can be reformulated [23]
+as
+(4)
+where
+ and
+ are the observed sequence before and
+after the
+ th trellis section. The ﬁrst term,
+ , referred
+to as the forward metric , is related to the probability that the
+trellis reaches
+ given the past observation
+ . The for-
+ward metric
+ is computed recursively as
+(5)
+by performing a forward sweep on the trellis from
+ . The
+second term in (4),
+ , is referred to as the branch
+metric and is related to the probability that a transition from
+to
+ occurs. The branch metric
+ is computed
+from the channel output, noise statistics, and the error-free
+output of the branch connecting
+ and
+ at time
+ . Note
+that each trellis section has
+ possible transitions. The third
+term
+ , referred to as the backward metric , is related to
+the probability that the trellis reaches state
+ given the future
+observation
+ . The backward metric
+ is computed
+recursively as
+(6)
+by performing a backward sweep on the trellis from state
+ .
+Hence, the decoding process consists of three steps. First,
+branch metrics in each trellis section are computed. Second,
+the forward and backward metrics (
+ and
+ ) are computed
+recursively via (5) and (6). Third, the LLR
+ is computed
+as
+(7)
+It is known that if the function
+ deﬁned as
+(8)
+is employed instead of
+ , the performance of the log-domain
+MAP algorithm approaches that of the BCJR algorithm [23] towithin 0.05 dB. The second term in (8) is referred to as the
+correction factor .
+B. MAP Decoder Architectures
+Numerous architectures can be employed to implement the
+log-MAP algorithm [43]. However, the trellis sweep over all
+observed symbols requires large memory in order to hold the
+forward and backward metrics until they are used in the LLRcomputation in (7). Hence, the sliding window log-MAP algo-
+rithm, considered in this paper, has become popular as it mini-
+mizes the metric storage requirements [23].
+The sliding window log-MAP decoding algorithm is derived
+via the property that the forward and backward metrics
+and
+Fig. 2. Scheduling of state metric recursions for /11
+and /12
+in the sliding
+window log-MAP. For simplicity, it is assumed that the computation and
+warm-up period equals /76. Shadowed region indicates the computation and
+storage of /12
+. The gridded region indicates the computation of /11
+followed by
+the computation of /3/40 /117
+ /41. Here, /12
+and /12
+are the ﬁrst and second /12-recursion
+outputs, respectively, at a time index /107.
+Fig. 3. Baseline VLSI architecture of a sliding window log-MAP decoder.
+Fig. 4. Add-Compare-Select (ACS) unit.
+converge after a few constraint lengths have been traversed in
+the trellis, independent of the initial conditions [23]. We refer tothis property as the warm-up property and the warm-up period
+is assumed to have a duration of
+symbols. Due to the warm-up
+property, the state metrics (
+ and
+ ) computation can be parti-
+tioned into windows of size
+ . Further, the computations in each
+window can be done in parallel. Fig. 2 shows an example of a
+decoding ﬂow where the warm-up property is employed only
+for computing backward metrics. The warm-up or initializationperiod is depicted by dashed lines and the computation periodby solid lines. This warm-up property will be exploited later in
+deriving parallel and BIP architectures.
+Fig. 3 shows the VLSI architecture of a decoder whose
+data- ﬂow graph is shown in Fig. 2. The architecture has units
+for the computation of branch metrics (
+-unit), one forward
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 924 IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005
+Fig. 5. Parallel processing. (a) Original. (b) Sub-block parallel architecture.
+recursion (
+ -unit), two backward recursions and a buffer to
+store backward metrics
+ and
+ (
+-unit), and the
+ metric
+processing unit (
+ -MPU). The computations in
+ -MPU and
+-MPU can be implemented in a feedforward manner and
+thus these do not limit the throughput. However, the forwardand backward recursions are computed via an array of ACSkernels in a state-parallel manner. An ACS kernel is depicted
+in Fig. 4, where the correction factor in (8) is implemented via
+a look-up-table (LUT) and state metric re-scaling is employedto avoid over ﬂows [14]. Therefore, it is the critical path delay
+of the ACS unit shown in Fig. 4 that limits the throughput.
+III. B
+LOCK -INTERLEA VED PIPELINING TECHNIQUE
+In this section, we present techniques for improving the
+throughput of recursive data- ﬂow graphs. First, we review
+the existing techniques of parallel processing [25], [26] andlook-ahead transform [39], [40]. Then, we present the BIPtechnique, which is one of the contributions of this paper. These
+techniques are applied to design high-throughput MAP decoder
+architectures in Section IV .
+A. Parallel Processing
+In general, pipelining or parallel processing becomes dif ﬁ-
+cult for a recursive datapath. However, if the data is being pro-
+cessed in blocks and the processing satis ﬁes the following two
+properties: 1) computation between blocks are independent and2) computation within a block is recursive, then a block par-allel processing architecture can be achieved. Further, if a block
+can be segmented into computationally independent sub-blocks,
+parallel processing can be applied at the sub-block level leadingto high-throughput architectures presented in [25] and [26].
+Consider the recursive architecture in Fig. 5(a). Note that the
+architecture in Fig. 5(a) cannot be easily pipelined or paral-
+lelized due to the presence of the feedback loop. However, if adata block of length
+is processed independent of other blocks
+and the computations within a block can be segmented into com-
+putationally independent sub-blocks, then one can parallelize
+the architecture as shown in Fig. 5(b), where the parallelizationfactor
+and a block
+ is divided into
+ sub-blocks,
+and
+ . It is obvious that the critical path is not affected and
+the throughput is increased by a factor of
+ at the expense of a
+factor of
+ increase in hardware complexity.
+B. Look-Ahead Transform
+Another transform to achieve high-throughput for recursive
+data- ﬂow graphs is look-ahead computation [39]. Look-ahead
+Fig. 6. Look-ahead transform.
+leads to an increase in the number of symbols processed at each
+time step as shown in Fig. 6, where two symbols are processedin one clock cycle. If
+and
+, then look-ahead results in the output being
+expressed as
+ . Note that
+ will
+have a longer critical path delay than the original computation ofFig. 5(a). However, it has been shown that the function
+can
+be optimized via logic minimization so that an overall increase
+in throughput can be achieved. For example, in the context ofViterbi decoding, it has been shown that a 1.7 times increase inthroughput is feasible via radix-4 computation [40].
+C. Block Interleaved Pipelining (BIP)
+The parallel architecture in Fig. 5(b), where the level of
+parallelism is equal to 2, has two identical computation units
+processing on two independent input symbols. Therefore, the
+hardware complexity increases linearly with the level of par-allelism
+. To achieve an area-ef ﬁcient implementation, we
+propose the block interleaved pipelining (BIP) technique. First,
+the data- ﬂow of Fig. 5(b) is folded [39] to a single computation
+unit as shown in Fig. 7(a) where two independent computationsare carried out in a single computational unit. Note that theresulting BIP architecture in Fig. 7(a) is inherently pipelined.
+Therefore, an application of retiming [39] [see Fig. 7(b)] results
+in reduction of the critical path delay by a factor of two overthat of the original architecture in Fig. 5(a). It is clear that theretimed BIP architecture in Fig. 7(b) leads to high-throughput
+at the cost of a marginal increase in memory due to pipelining
+latches when compared to the architecture in Fig. 5(a).
+The BIP technique is applicable to general recursive
+data- ﬂow graphs that satisfy the following two properties: 1)
+computation is block-based with computation between the
+blocks being independent and 2) operations within a blockis recursive. Further, if block computation can be partitionedinto sub-block computation via algorithmic transforms while
+maintaining independence between sub-blocks, the BIP can
+be applied in a sub-block level. In such a case, processing
+sub-blocks in a parallel manner leads to the BIP architecturewhich is inherently pipelined.
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. LEE et al. : AREA-EFFICIENT HIGH-THROUGHPUT MAP DECODER ARCHITECTURES 925
+Fig. 7. Block-interleaved pipelining (BIP). (a) BIP architecture. (b) Retimed BIP architecture.
+Fig. 8. Parallel architecture. (a) Scheduling for parallel sub-block processing
+with /77 /61/50. (b) VLSI architecture with /77-level parallel sub-block processing.
+IV . H IGH-THROUGHPUT MAP D ECODER ARCHITECTURES
+In this section, we apply the techniques in Section III to
+develop parallel, BIP, symbol-based, and symbol-based BIPdecoder architectures.
+A. Parallel Architecture
+Due to the warm-up property of MAP decoding described in
+Section II-B, a block of
+information bits can be segmented
+into
+ sub-blocks with the warm-up period
+ overlapped
+among sub-blocks. Thus, by employing the parallelizationtechnique in Section III-A,
+identical processing units are
+implemented in parallel. This sub-block parallel architecturewas presented in [25] –[28] and leads to a linear increase in
+hardware complexity for a linear speedup in throughput. Forexample, a block size of
+can be divided into
+sub-blocks of size
+ . Thus, the
+ trellis sections between the
+th and
+ th trellis nodes are used as the warm-up period for
+the
+ recursion of the second sub-block. Fig. 8(a) shows the
+data- ﬂow for an example with
+ and
+ . Note that
+Fig. 9. BIP architecture. (a) /77-level BIP architecture. (b) BIP ACS
+architecture.
+the beginning and ending states of the trellis are known to the
+decoder and hence warm-up period is not required for the ﬁrst
+and last computation windows. Fig. 8(b) depicts an
+ -level
+parallel architecture.
+B. BIP Architecture
+Following the approach described in Section III-C, the BIP
+architecture is obtained by processing
+ sub-blocks of size
+. For simplicity, we refer to this architecture as a BIP ar-
+chitecture even though the interleaving is done at the sub-blocklevel and we assume that the block-size
+and the sub-block
+size
+ is a multiple of the warm-up period
+ .
+Fig. 9(a) depicts the BIP architecture, where the
+ ,
+, and
+MPUs are pipelined in order to reduce the critical path delay
+and
+ delay-line blocks are required to compute
+ sub-blocks
+in a block-interleaved order. The
+ and
+ units have the folded
+block-interleaved ACS architecture shown in Fig. 9(b), wherethe block-interleaving factor is
+. The BIP architecture pro-
+cesses trellis sections
+in consecutive clock cycles. Compared with the con-
+ventional implementation in Fig. 4, the block-interleaved ACSarchitecture in Fig. 9(b) has
+delays in the feedback loop of
+the ACS recursion. Thus, retiming can be employed to pipeline
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 926 IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005
+Fig. 10. Proposed symbol-based decoding scheme for a example with /91/53 /59 /55/93
+RSC encoder.
+the critical path by
+ levels in order to achieve speed-up by a
+factor of
+ . The price we pay is an increase in the pipelining
+registers. Hence, the BIP architecture will consume less areathan the parallel architecture.
+C. Symbol-Based Architecture
+We apply an
+-level look-ahead transform to the
+ and
+ re-
+cursions. Doing so enables us to compute the
+ and
+ metrics
+by merging
+ trellis sections and to decode
+ bits per each clock
+cycle [40]. We refer to this approach as symbol-based MAP
+decoding. For simplicity, a 2-bit symbol decoding, where twotrellis sections are grouped (see Fig. 10), is described next. Ex-tension to the multi-bit symbol case is straightforward.
+We reformulate the
+recursion in (5) by applying a two-level
+look-ahead transform as follows:
+(9)
+since the
+ operation is associative and addition distributes
+over
+ . Here,
+ is the branch metric of the path
+connecting
+ and
+ . In a similar way, the
+ recursion in (6)
+is rewritten as
+(10)
+In order to compute
+ via 2-bit symbol decoding, either
+or
+ in (7) can be extended to
+ or
+ . Here, we
+extend the
+ recursion. Employing (5), we substitute for
+in (7) as follows:
+(11)and since
+ operation is associative and addition distributes
+over
+ ,w eh a v e
+(12)
+Similarly,
+ can be computed as
+(13)
+Theﬁrst term in (13) can be expressed as
+(14)
+where
+ corresponds to the transition with
+ and
+.B yd e ﬁning symbol reliability metric
+ as
+(15)
+we can compute
+ and
+ as follows:
+(16)
+Note that LLR outputs of (16) equal those computed from the
+bit-wise decoding algorithm in (7). The modi ﬁed ACS architec-
+ture and the
+ -MPU are depicted in Fig. 11. In general, (16) can
+be derived for an
+ -bit symbol-based decoding as follows:
+(17)
+where
+ is the symbol made up of bits from
+to
+ and
+ . Although the symbol-based
+decoding increases the number of decoded bits per clock cycle,the critical path delay is increased as shown in Fig. 11. How-ever, this architecture reduces the storage requirement for statemetrics by a factor of
+.
+In general, assuming that
+ and
+ are equal to delays of
+an adder and a
+ , respectively, and the delay of the re-scaling
+block is negligible, the critical path delay of
+ -bit symbol-based
+algorithm equals
+ as shown in Fig. 11. The expected
+speed-up
+ is written as
+(18)
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. LEE et al. : AREA-EFFICIENT HIGH-THROUGHPUT MAP DECODER ARCHITECTURES 927
+TABLE I
+STORAGE REQUIREMENT ,LOGIC COMPLEXITY ,CLOCK FREQUENCY ,AND SPEED -UPO F HIGH-THROUGHPUT ARCHITECTURES
+Fig. 11. Symbol-based architectures with /114 /61/50 for: (a) ACS recursion, and
+(b) the /3-MPU.
+where the numerator and the denominator in (18) are the compu-
+tation times for processing a block of
+ bits using the ACS ar-
+chitectures of Fig. 4 and Fig. 11, respectively. In general,
+and hence a speed-up in the range of
+ is ex-
+pected at the cost of an increase in logic complexity due to thelook-ahead transform. In a typical scenario, without any logicoptimization, we get
+. Hence,
+ approaches 1.5
+asymptotically as
+ increases. Employing appropriate logic op-
+timizations, it is possible to reach
+ as shown in [40] for
+a Viterbi decoder.
+D. Symbol-Based BIP Architecture
+In order to increase the throughput gain of the symbol-based
+decoding architecture, we apply an
+ -level BIP transform alongwith an
+ -level look-ahead transform. First, a block is divided
+into
+ sub-blocks using the warm-up property and a
+ -bit
+symbol-based decoder is employed to process each sub-block.Then, the
+identical symbol-based decoders are folded on to
+a single hardware unit resulting in a
+ -level pipelined
+ -bit
+symbol-based decoder. Retiming the
+ latches results in a
+symbol-based BIP decoder architecture. The symbol-based BIParchitecture has a speed-up of
+(19)
+Thus, the symbol-based BIP is expected to achieve the highest
+speed-up among the above mentioned architectures. Thesymbol-based BIP architecture is same as the architecture ofFig. 9(a) except for the fact that the
+-MPU,
+ -MPU,
+ -MPU,
+and
+ -MPU have symbol-based datapaths.
+E. Comparison
+Table I summarizes the storage requirement, logic com-
+plexity, clock frequency, and expected speed-up of eachhigh-throughput architecture, where
+-level parallelism is
+considered,
+ is the number of states in the trellis,
+ ,
+ ,
+, and
+ are precisions of branch metrics, state metrics,
+received symbol
+ , and LLR, respectively. As mentioned
+previously, the hardware complexity including the storagerequirement and logic complexity of the parallel processingarchitecture increases linearly with speed-up
+. Compared to
+the parallel architecture, the BIP architecture provides the samespeed-up with a reduction in logic complexity by a factor of
+.
+The symbol-based architecture provides a speed-up in the range
+1 to 2, with a logic complexity that grows exponentially with
+but with a state metric storage requirement that decreases
+by a factor of
+ as compared to a parallel architecture. The
+symbol-based BIP architecture has a speed-up in the range
+to
+ with a logic complexity that increases exponentially
+with
+ and a state metric memory complexity that decreases
+roughly by a factor of
+ .
+We estimate the area based on a complexity analysis in
+Table I. A standard cell-based design methodology is con-sidered. Actual areas of a 1-bit adder, 1-bit latch,
+, and
+1-bit buffer cell are obtained from a 0.25-
+ m CMOS standard
+cell library, and precisions are determined via computer sim-ulations (
+,
+ ,
+ , and
+ ).
+The interconnect area is not included. For
+ and
+ , the
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 928 IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005
+Fig. 12. SISO MAP decoder area comparison.
+estimated silicon area, computed from Table I, is shown in
+Fig. 12 in terms of the normalized area, which is de ﬁned as
+the ratio of the area of the high-throughput architecture overthat of the original architecture
+. The BIP architecture
+consumes 65% –80% of the area of the parallel architecture for
+and
+ . The symbol-based BIP architecture occupies
+30% and 7% more area than the parallel architecture for
+and
+ , respectively, for
+ . However, the normalized area
+increases exponentially with
+ and hence the symbol-based
+BIP architecture is not considered as practical for
+ .
+Different memory access patterns for input and output mem-
+ories (interleavers/deinterleavers in turbo decoders and equal-izers) should be considered for each different high-throughputMAP architecture. In case of an
+-level parallel architecture,
+the clock frequency is
+ , which is same as that
+of a nonparallel MAP decoder architecture, but at each clock
+symbols need to be decoded in parallel. Thus,
+ memory ac-
+cesses are executed within
+ period unless input and
+output memories are partitioned and accessed in parallel suchthat no access con ﬂict occurs. The symbol-based architecture
+has the same problem that
+memory accesses are executed
+during
+ period, but the clock period is increased
+approximately by a fact of
+ . On the other hand, the BIP ar-
+chitecture needs one memory access per one clock cycle, butthe clock period is reduced by a fact of
+in comparison with
+Fig. 13. Block diagram of a PCCC encoder and a turbo decoder. Here /73and
+/73
+ denote block interleaving and deinterleaving, respectively.
+Fig. 14. Serial VLSI turbo decoder architecture.
+a parallel architecture. Since the memory and logic clock net-works are synchronized with one clock source, the BIP archi-tecture requires more simple clock networks than the paralleland symbol-based architectures.
+In summary, the parallel and symbol-based decoder architec-
+tures improve throughput at the expense of increased area. Thearea increases linearly and exponentially with the speed-up
+for the parallel and symbol-based architectures, respectively.The BIP reduces this area penalty without sacri ﬁcing the
+throughput gains.
+V. A
+PPLICATIONS
+In this section, the proposed high-throughput MAP decoder
+architectures are employed for high-throughput implementa-tions of turbo decoders and turbo equalizers, and architectural
+bene ﬁts of each approach are compared.
+A. Turbo Decoder
+The turbo code considered in this paper is made up of two re-
+cursive systematic convolutional (RSC) encoders concatenatedin parallel as shown in Fig. 13. The bit sequences transferredfrom one encoder to the other are permuted by an interleaver.
+The decoder contains two SISO MAP decoders which are asso-
+ciated with two RSC encoders as depicted in Fig. 13. The de-coding of the observed sequences is performed iteratively viathe exchange of soft output information
+between the
+constituent decoders. The decoding process is repeated itera-
+tively until a proper stopping criterion terminates the iterations.
+The turbo decoder can be implemented via a serial architec-
+ture as shown in Fig. 14, where one SISO MAP decoder is time-
+shared. Hence, increasing the throughput of the SISO MAP de-coder directly leads to an overall improvement in throughput ofthe turbo decoder. Based on the area estimation results in Table I,
+it is predicted that BIP MAP decoder architecture achieves the
+best speed-up at the minimum area cost for the turbo decoderimplementation.
+In order to validate our analysis, three high-throughput MAP
+decoders were designed using the techniques in Section IV .
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. LEE et al. : AREA-EFFICIENT HIGH-THROUGHPUT MAP DECODER ARCHITECTURES 929
+TABLE II
+TURBO DECODER APPLICATION RESULTS
+Fig. 15. Transmitter and receiver model of turbo equalizer. The superscripts
+/69and /68denote equalizer and decoder, respectively.
+These decoder architectures were implemented in VHDL for
+and
+ and their functionality was veri ﬁed. The speed-up
+factor was
+ in all cases. Encoder polynomials were
+chosen to be
+ and
+ for
+and
+ , respectively. The design was synthesized using the
+Synopsys Design Compiler using 2.5-V 0.25-
+ m CMOS tech-
+nology standard cell library. The synthesized design was placed
+and routed using the Cadence Silicon Ensemble .Pathmill was
+used to determine the critical path from post layout simulations.Measured results on the critical path delay, speed-up, siliconarea, and throughput are summarized in Table II. The measured
+normalized area is close to the predicted results in Fig. 12, and
+the measured memory and logic areas clearly show that the BIPtechnique reduces the logic complexity nearly by a factor of
+keeping the memory complexity same as the parallel pro-
+cessing. As we predicted previously from the analysis, the BIP
+architecture achieves high-throughput with minimal area cost.It should be noticed that the BIP symbol-based decoding archi-tecture shows the maximum throughput gain for two-level par-
+allelism
+as expected in Section IV-D. However, as
+ is
+increased, the logic complexity is expected to increase expo-nentially (see Fig. 12). Hence, the BIP symbol-based decodingarchitecture does not provide a good tradeoff between the area
+overhead and the throughput gain for large values of
+.
+B. Turbo Equalizer
+In the case where the transmitted symbols are protected by
+RSC encoders (see Fig. 15), the equalizer and decoder modulescan be related in the same way as in turbo decoding of seri-ally concatenated convolutional codes [2], [4]. Hence, in order
+to achieve iterative processing gain, the SISO MAP equalizer is
+employed and provides the SISO MAP decoder with soft out-puts
+as depicted in Fig. 15. If a binary phase shift
+keying (BPSK) modulation is concatenated with an RSC en-
+coder in Fig. 15, one SISO MAP decoder can be shared to im-
+plement both SISO MAP equalizer and decoder as in a serial ar-chitecture (Fig. 14). However, if quadrature phase shift keying(QPSK) modulation is employed, then the MAP SISO equal-
+Fig. 16. Decoding ﬂow of the conventional turbo equalizer implementation.
+izer processes one QPSK symbol, composed of two bits, but the
+SISO MAP decoder decodes one bit at each clock. Hence, theequalizer and the decoder need separate hardware platforms as
+they have different trellis structures. Furthermore, since block-
+based equalization and decoding are carried out iteratively be-tween two SISO blocks, one of the blocks, either the equalizer
+or the decoder, is in an idle state as shown in Fig. 16. This inef-
+ﬁcient use of computational resources can be overcome by em-
+ploying the proposed symbol-based MAP decoder.
+Fig. 17 depicts the proposed area-ef ﬁcient VLSI architecture
+for turbo equalizers, where instead of two separate MAP equal-
+izer and decoder a single symbol-based MAP decoder is em-ployed thereby both achieving the dual goals of saving area andfully utilizing the hardware resources. Since the equalizer pro-
+cesses the received symbols from the channel and LLR values
+on each bit from the SISO decoder, the branch metric of theSISO MAP equalizer is computed as
+(20)
+if
+else
+(21)
+where a symbol
+ is made up of
+ bits,
+ ,
+and the channel length is
+ . On the other hand, the branch
+metric of SISO MAP decoder is de ﬁned as
+(22)
+where one code symbol is composed of
+ bits. Thus, Fig. 17
+has two branch metric computation units, but other computationunits such as
+,
+, and
+ are shared.
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 930 IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005
+Fig. 17. Proposed area-ef ﬁcient VLSI architecture for turbo equalizers.
+Fig. 18. Predicted area ratio /26for two different scenarios: (a) QPSK /40 /114 /61/50 /41 , /108 /61/51, and (b) 8-PSK /40 /114 /61/51 /41 , /108 /61/50.
+Though the parallel processing transform can be applied in
+addition to symbol-based decoding for improving throughput,
+the BIP symbol-based decoder consumes much less silicon area,and hence provides the better trade off between throughput gainand area cost. In this paper, we compare the area-ef ﬁcient high-
+throughput turbo equalizer architecture with the conventional
+architecture where two SISO MAP equalizer and decoder areseparately implemented.
+1) Area: By following the approach of Section IV-E, we can
+predict the normalized area of the area-ef ﬁcient high-throughput
+turbo equalizer over that of the conventional architecture.The normalized area
+is given by
+(23)
+where
+ is the area of the proposed area-ef ﬁcient high-
+throughput architecture employing the symbol-based BIPprocessing and
+and
+ are the area of MAP equalizer
+and decoder for the separate implementation of two SISOMAP blocks. The predicted normalized area is computed using
+Table I and plotted in Fig. 18 for two examples where a MAP
+equalizer is considered for QPSK modulation with the channellength
+(
+ states) and 8-PSK modulation with
+the channel length
+ (
+ states). It is observed that
+the normalized area is minimized when the number of states in
+the equalizer and decoder are equal. Further, as the differencebetween the numbers of states of two SISO blocks is increased,the normalized area increases. This is because the proposed
+symbol-based SISO decoder is designed to accommodate the
+larger of the two trellises.
+2) Speed-Up: The processing time required for one block
+iteration of equalization and decoding is expressed as
+(24)
+where
+ and
+ are the critical path delays of SISO MAP
+equalizer and decoder, respectively. Assuming that the equalizerprocesses
+-bit symbols and hence,
+ , the speed-up
+ is
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. LEE et al. : AREA-EFFICIENT HIGH-THROUGHPUT MAP DECODER ARCHITECTURES 931
+Fig. 19. Turbo equalizer core layouts. (a) Conventional architecture with separate equalizer and decoder. (b) Symbol-based architecture with /114 /61/50 .
+(c) Symbol-based BIP architecture with /77 /61 /114 /61/50.
+TABLE III
+TURBO EQUALIZER APPLICATION RESULTS
+the ratio of
+ of the conventional approach over the proposed
+high-throughput architecture
+where
+ extra cycles are caused by a block-interleaved
+computation and
+ is the critical path delay of the proposed
+high-throughput architecture. Note that the speed-up
+ becomes
+larger as
+ gets closer to
+ .
+3) Experimental Results: We employ a RSC encoder at the
+transmitter with a generator polynomial
+ . The
+coded bit stream is mapped to four-level pulse amplitude mod-
+ulation signals. We considered a static channel model,
+, and hence 16 states exist in each
+SISO equalizer and decoder. The conventional and proposed ar-
+chitectures were designed in VHDL, then synthesized via the
+Synopsys Design Compiler , and placed and routed via the Ca-
+dence Silicon Ensemble by using 2.5-V 0.25-
+ m CMOS stan-
+dard cell library. The core layouts are shown in Fig. 19. The area
+and the critical path delay of each architecture are summarized
+in Table III, where the parallel architecture occupies two timesarea of Fig. 19(a). The throughput is improved by 1.79 while25% less area is consumed compared with the conventional ap-proach. The measured normalized area matches well with re-
+sults of Fig. 18.
+VI. C
+ONCLUSION
+In this paper, we have presented BIP and symbol-based
+BIP architectures as being area ef ﬁcient and providing
+high-throughput. Further, we synthesized the VLSI archi-
+tectures in a 2.5-V 0.25-
+ m CMOS process and demonstrated
+that the proposed architectures achieved the dual goals of highthroughput and area- ef ﬁciency for turbo decoders and turbo
+equalizers.
+Future work needs to be directed toward further improving
+the area-ef ﬁciency and throughput gains exploiting circuit-level
+optimization techniques. Developing ef ﬁcient interleaver archi-
+tectures is of interest. New architectures based on factor-graph
+representations of iterative decoders are also a promising area
+of research.
+R
+EFERENCES
+[1] C. Berrou, A. Glavieux, and P. Thitimajshima, “Near Shannon limit
+error-correcting coding and decoding: Turbo codes, ”inProc. IEEE
+Int. Conf. Communications , Geneva, Switzerland, May 1993, pp.
+1064 –1070.
+[2] S. Benedetto et al. ,“A soft-input soft-output maximum a posteriori
+(MAP) module to decode parallel and serial concatenated codes, ”Jet
+Propulsion Lab., Pasadena, CA, TDA Progress Rep. 42-127, 1996.
+[3] R. G. Gallager, Low-Density Parity-Check Codes . Cambridge, MA:
+MIT Press, 1963.
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 932 IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS, VOL. 13, NO. 8, AUGUST 2005
+[4] C. Douillard, M. Jezequel, C. Berrou, A. Picart, P. Didier, and
+A. Glavieux, “Iterative correction of intersymbol interference:
+Turbo-equalization, ”Eur. Trans. Telecommun. , vol. 6, pp. 507 –511,
+Sep.–Oct. 1995.
+[5] A. Glavieux, C. Laot, and J. Labat, “Turbo equalization over a frequency
+selective channel, ”inProc. Int. Symp. Turbo Codes and Related Topics ,
+Sep. 1997, pp. 96 –102.
+[6] M. T üchler, R. Koetter, and A. Singer, “Turbo-equalization: Principles
+and new results, ”IEEE Trans. Commun. , vol. 50, no. 5, pp. 754 –767,
+May 2002.
+[7] T. Souviginer et al. ,“Turbo decoding for PR4: Parallel versus serial
+concatenation, ”inProc. IEEE Int. Conf. Communications , Vancouver,
+Canada, Jun. 1999, pp. 1638 –1642.
+[8] Z. Wu and J. M. Ciof ﬁ,“Turbo decision aided equalization for magnetic
+recording channels, ”inProc. Global Telecommunication Conf. , 1999,
+pp. 733 –738.
+[9] X. Wang and H. Poor, “Iterative (turbo) soft interference cancellation
+and decoding for coded CDMA, ”IEEE Trans. Commun. , vol. 47, no. 7,
+pp. 1046 –1061, Jul. 1999.
+[10] Japan ’s Proposal for Candidate Radio Transmission Technology on
+IMT-2000: W-CDMA. Japan Ass. of Radio Industries and Business(ARIB). [Online]. Available: http://www.arib.or.jp/IMT-2000/propo-nent
+[11] “Telemetry Channel Coding, ”Consultative committee for space data
+systems (CCSDS), Blue Book 101.0-B-4, 1999.
+[12] “Multiplexing and Channel Coding (FDD) (3G TS2 5.212 Version
+3.3.0, Release 1999), ”Universal Mobile Telecommunications Systems
+(UMTS), http://www.etsi.org, 1999.
+[13] C. Douillard, M. Jezequel, C. Berrou, N. Brengarth, J. Tousch, and N.
+Pham, “The turbo codec standard for DVB-RCS, ”presented at the 2nd
+Int. Symp. Turbo Codes and Related Topics, Brest, France, Sep. 2000.
+[14] Z. Wang, H. Suzuki, and K. K. Parhi, “VLSI implementation issues of
+turbo decoder design for wireless applications, ”Proc. IEEE Signal Pro-
+cessing Systems (SiPS): Design and Implementation , pp. 503 –512, Oct.
+1999.
+[15] D. Garrett, B. Xu, and C. Nicol, “Energy ef ﬁcient turbo decoding for
+3G mobile, ”inProc. IEEE Int. Symp. Low Power Electronics Design
+(ISLPED’01) , Huntington Beach, CA, 2001, pp. 328 –333.
+[16] O. Leung, C. Yue, C. Tsui, and R. Cheng, “Reducing power consump-
+tion of turbo code decoder using adaptive iteration with variable supplyvoltage, ”inProc. IEEE Int. Symp. Low Power Electronics Design
+(ISLPED’99) , San Diego, CA, 1999, pp. 36 –41.
+[17] A. Matache, S. Dolinar, and F. Pollara, “Stopping rules for turbo de-
+coders, ”Jet Propulsion Lab., Pasadena, CA, TDA Progress Rep. 42-142,
+2000.
+[18] P. H. Wu and S. M. Pisuk, “Implementation of a low complexity, low
+power, integer-based turbo decoder, ”inProc. Global Telecommunica-
+tions Conf. , vol. 2, 2001, pp. 946 –951.
+[19] S. Lee, N. Shanbhag, and A. Singer, “Low-power turbo equalizer ar-
+chitecture, ”Proc. IEEE Signal Processing Systems (SiPS): Design and
+Implementation , pp. 33 –38, Oct. 2002.
+[20] D. Garrett and M. Stan, “Low power architecture of the soft-output
+Viterbi algorithm, ”inProc. IEEE Int. Symp. Low Power Electronics
+Design (ISLPED’98) , Monterey, CA, 1998, pp. 262 –267.
+[21] G. Masera, M. Mazza, G. Piccinini, F. Viglione, and M. Zamboni, “Ar-
+chitectural strategies for low-power VLSI turbo decoders, ”IEEE Trans.
+Very Large Scale Integr. (VLSI) Syst. , vol. 10, no. 3, pp. 279 –285, Jun.
+2002.
+[22] C. Schurgers, F. Catthoor, and M. Engels, “Energy ef ﬁcient data transfer
+and storage organization for a MAP turbo decoder module, ”inProc.
+IEEE Int. Symp. Low Power Electronics Design (ISLPED’99) , San
+Diego, CA, 1999, pp. 76 –81.
+[23] A. J. Viterbi, “An intuitive justi ﬁcation and a simpli ﬁed implementa-
+tion of the MAP decoder for convolutional codes, ”IEEE J. Sel. Areas
+Commun. , vol. 16, no. 2, pp. 260 –264, Feb. 1998.
+[24] M. M. Mansour and N. R. Shanbhag, “Low-power VLSI decoder archi-
+tecture for LDPC codes, ”inProc. IEEE Int. Symp. Low Power Elec-
+tronics Design (ISLPED’02) , Monterey, CA, 2002, pp. 284 –289.
+[25] Z. Wang, Z. Chi, and K. Parhi, “Area-ef ﬁcient high-speed decoding
+schemes for turbo decoders, ”IEEE Trans. Very Large Scale Integr.
+(VLSI) Syst. , vol. 10, no. 6, pp. 902 –912, Dec. 2002.
+[26] J. Hsu and C. Wang, “A parallel decoding scheme for turbo codes, ”in
+Proc. IEEE Int. Conf. Circuits and Systems , vol. 4, 1998, pp. 445 –448.[27] B. Bougard, A. Ciulietti, L. V . d. Perre, and F. Catthoor, “A class of
+power ef ﬁcient VLSI architectures for high speed turbo-decoding, ”in
+Proc. IEEE Global Telecommunication Conf. , vol. 1, 2002, pp. 553 –549.
+[28] B. Bougard et al. ,“A scalable 8.7 nJ/bit 75.6 Mb/s parallel concatenated
+convolutional (turbo-) codec, ”inIEEE Int. Solid-State Circuits Conf.
+(ISSCC) Dig. Tech. Papers , 2003, pp. 152 –153.
+[29] A. Worm, H. Lamm, and N. Wehn, “A high-speed MAP architecture
+with optimized memory size and power consumption, ”inProc. IEEE
+Workshop on Signal Processing Systems (SiPS2000) , 2000, pp. 265 –274.
+[30]
+,“Design of low-power high-speed maximum a priori decoder ar-
+chitectures, ”inProc. Design, Automation and Test in Eur. Conf. Exhibi-
+tion, Apr. 2001, pp. 258 –265.
+[31] M. M. Mansour and N. R. Shanbhag, “Design methodology for high-
+speed iterative decoder architectures, ”inProc. IEEE Int. Conf. Acous-
+tics, Speech, and Signal Processing , vol. 3, 2002, pp. 3085 –3088.
+[32] ,“VLSI architectures for SISO-APP decoders, ”IEEE Trans. Very
+Large Scale Integr. (VLSI) Syst. , vol. 11, no. 4, pp. 627 –650, Aug. 2003.
+[33] A. Giulietti et al. ,“Parallel turbo code interleavers: Avoiding collisions
+in accesses to storage elements, ”Electron. Lett. , vol. 38, no. 5, pp.
+232–234, Feb. 2002.
+[34] T. Miyauchi, K. Yamamoto, and T. Yokokawa, “High-performance
+programmable SISO decoder VLSI implementation for decoding turbocodes, ”inProc. IEEE Global Telecommunications Conf. , vol. 1, 2001,
+pp. 305 –309.
+[35] M. El-Assal and M. Bayoumi, “A high-speed architecture for MAP de-
+coder, ”Proc. IEEE Signal Processing Systems (SiPS): Design and Im-
+plementation , pp. 69 –74, Oct. 2002.
+[36] M. Bickerstaff, L. Davis, C. Thomas, D. Garret, and C. Nicol, “A2 4
+Mb/s radix-4 logMAP turbo decoder for 3GPP-HSDPA mobile wire-less,”IEEE Int. Solid-State Circuits Conf. (ISSCC) Dig. Tech. Papers ,
+pp. 150 –151, 2003.
+[37] E. Yeo, S. Augsburger, W. R. Davis, and B. Nikolic, “Implementation of
+high throughput soft output Viterbi decoders, ”Proc. IEEE Signal Pro-
+cessing Systems (SiPS): Design and Implementation , pp. 146 –151, Oct.
+2002.
+[38] F. Cathoor, S. Wuytack, E. de Greef, F. Balasa, L. Nachtergaele, and
+A. Vandecapelle, Custom Memory Management Methodology, Explo-
+ration of Memory Organization for Embedded Multimedia System De-
+sign. Norwood, MA: Kluwer, 1998.
+[39] K. K. Parhi, VLSI Digital Signal Processing Systems: Design and Im-
+plementation . New York: Wiley, 1999.
+[40] P. J. Black and T. H. Meng, “A 140-Mb/s, 32-state, radix-4 Viterbi de-
+coder, ”IEEE J. Solid-State Circuits , vol. 27, no. 12, pp. 1877 –1885, Dec.
+1992.
+[41] L. Bahl et al. ,“Optimal decoding of linear codes for minimizing symbol
+error rate, ”IEEE Trans. Inf. Theory , vol. 20, no. 2, pp. 284 –287, Mar.
+1974.
+[42] J. V ogt, K. Koora, A. Finger, and G. Gettweis, “Comparison of different
+turbo decoder realization for IMT-2000, ”Proc. IEEE Globecom , pp.
+2704 –2708, 1999.
+[43] G. Bauch and V . Franz, “A comparison of soft-in/soft-out algorithms for
+turbo detection, ”inProc. IEEE Int. Conf. Telecommunications (ICT’98) ,
+Jun. 1998, pp. 259 –263.
+Seok-Jun Lee (S’96–M’04) was born in Pusan,
+Korea, in 1973. He received the B.S. and M.S.
+degrees from the School of Electrical Engineering,
+Seoul National University (SNU), Seoul, Korea, in
+1996 and 1998, respectively, and the Ph.D. degree
+in electrical and computer engineering from theUniversity of Illinois at Urbana-Champaign (UIUC)
+in 2004.
+During the summer of 2001 and 2002, he worked
+at the Communication Systems Laboratory, DSP
+Solution R&D Center, Texas Instruments Inc.,
+Dallas, TX, where he was involved in IEEE 802.11 and 802.16 modem devel-
+opment. Since September 2004, he has been working on DVB-H and ISDB-T
+modem development at the Communication Systems Laboratory, DSP Solution
+R&D Center, Texas Instruments Inc., Dallas, TX. His research interests includeVLSI architectures for communication and signal processing systems.
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. LEE et al. : AREA-EFFICIENT HIGH-THROUGHPUT MAP DECODER ARCHITECTURES 933
+Naresh R. Shanbhag (M’88–SM’00) received
+the B.Tech. degree from the Indian Institute of
+Technology, New Delhi, India, the M.S. degree from
+the Wright State University, Dayton, OH, and the
+Ph.D. degree from the University of Minnesota,
+Minneapolis, in 1988, 1990, and 1993, respectively,all in electrical engineering.
+From 1993 to 1995, he worked at AT&T Bell
+Laboratories, Murray Hill, NJ, where he was the
+Lead Chip Architect for AT&T ’s 51.84 Mb/s trans-
+ceiver chips over twisted-pair wiring for ATM-LAN
+and VDSL chip-sets. Since August 1995, he has been with the Department of
+Electrical and Computer Engineering and the Coordinated Science Laboratory,
+University of Illinois at Urbana-Champaign, where he is presently a Professor.
+His research interests are in the design of integrated circuits and systems forbroadband communications including low-power/high-performance VLSI
+architectures for error-control coding, equalization, as well as digital integrated
+circuit design. He has published more than 90 journal articles, book chapters,
+and conference publications in this area and holds three U.S. patents. He is
+also a coauthor of the research monograph Pipelined Adaptive Digital Filters
+(Norwood, MA: Kluwer, 1994).
+Dr. Shanbhag received the 2001 IEEE T
+RANSACTIONS ON VERY LARGE
+SCALE INTEGRATION (VLSI) S YSTEMS Best Paper Award, the 1999 IEEE
+Leon K. Kirchmayer Best Paper Award, the 1999 Xerox Faculty Award, the
+National Science Foundation CAREER Award in 1996, and the 1994 Dar-
+lington Best Paper Award from the IEEE Circuits and Systems Society. Since
+July 1997, he has been a Distinguished Lecturer for the IEEE Circuits and
+Systems Society. From 1997 to 1999 and from 1999 to 2002, he served as an
+Associate Editor for the IEEE T RANSACTIONS ON CIRCUITS AND SYSTEMS —II:
+ANALOG AND DIGITAL SIGNAL PROCESSING and the IEEE T RANSACTIONS
+ONVERY LARGE SCALE INTEGRATION (VLSI) S YSTEMS , respectively. He has
+served on the technical program committees of various conferences.
+Andrew C. Singer (S’92–M’95–SM’05) was born
+in Akron, OH, in 1967. He received the S.B., S.M.,
+and Ph.D. degrees, all in electrical engineering and
+computer science, from the Massachusetts Institute
+of Technology, Cambridge, in 1990, 1992, and 1996,
+respectively.
+Since 1998, he has been on the faculty of the
+Department of Electrical and Computer Engineering
+at the University of Illinois at Urbana-Champaign,
+where he is currently an Associate Professor in the
+Electrical and Computer Engineering Department,
+and a Research Associate Professor in the Coordinated Science Laboratory.
+During the academic year 1996, he was a Post-Doctoral Research Af ﬁliate in
+the Research Laboratory of Electronics at MIT. From 1996 to 1998, he was a
+Research Scientist at Sanders, A Lockheed Martin Company, Manchester, NH.His research interests include statistical signal processing and communication,
+universal prediction and data compression, and machine learning.
+Prof. Singer was a Hughes Aircraft Masters Fellow and was the recipient
+of the Harold L. Hazen Memorial Award for excellence in teaching in 1991.
+In 2000, he received the National Science Foundation CAREER Award and in
+2001 he received the Xerox Faculty Research Award. He is currently a member
+of the MIT Educational Council, Eta Kappa Nu, and Tau Beta Pi.
+Authorized licensed use limited to: Indian Institute Of Technology (IIT) Mandi. Downloaded on January 23,2026 at 09:55:37 UTC from IEEE Xplore.  Restrictions apply. 

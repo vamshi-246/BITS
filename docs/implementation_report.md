@@ -3,23 +3,34 @@
 **Reference:** Studer et al., "ASIC Implementation of Soft-Input Soft-Output MIMO Detection Using MMSE Parallel Interference Cancellation", IEEE JSSC 2011  
 **Target:** Zynq-7010 FPGA / ASIC  
 **HDL:** Verilog-2001  
-**Current Config:** 2 parallel SISO modules, block length 6144, window size W=30
+**Current Config:** 2 parallel SISO modules, block length 3200, window size W=30, LTE tail enabled, paper boundary mode
 
 ---
 
 ## 1. System-Level Architecture
 
-The decoder splits the LTE codeword (up to 6144 bits) equally across **NUM_SISO** parallel BCJR (SISO) cores. Each core independently processes its segment using the sliding-window Max-Log MAP algorithm and outputs extrinsic LLRs.
+The decoder currently splits a `K=3200` LTE code block across **NUM_SISO=2**
+parallel BCJR (SISO) cores. Each core independently processes its segment using
+the sliding-window Max-Log MAP algorithm and outputs extrinsic LLRs. The last
+core also processes 3 LTE tail trellis steps, while BER decisions are counted
+only over the original 3200 information bits.
 
 | Parameter          | Value | Rationale                                               |
 |--------------------|-------|---------------------------------------------------------|
 | NUM_SISO           | 2     | Demonstrates parallelism; scalable to 8                 |
-| Segment per core   | 3072  | 6144 / 2 = 3072 trellis steps each                     |
+| Segment per core   | 1600  | 3200 / 2 = 1600 information trellis steps each         |
 | Window size (W)    | 30    | 30 trellis steps = 15 radix-4 cycles per window        |
-| NUM_WINDOWS        | 103   | ceil(3072 / 30) = 103 (102 full + 1 partial of 12)     |
+| NUM_WINDOWS        | 54    | ceil((1600 + 3 tail) / 30) = 54                        |
 | Trellis states     | 8     | LTE 3GPP constraint-length 4 convolutional code        |
 
 **Partial-window handling:** Every window always runs the full 15 R4 cycles. For the last partial window, out-of-range memory addresses return zero LLRs (handled by external controller), and output addresses ≥ `frame_len` are filtered out (`llr_out_valid` suppressed inside `bcjr_core`). This eliminates the synchronization bug where FR, BR, and DBR—running on different windows in parallel—would be desynchronized by a shared shortened window counter.
+
+**Current deterministic regression:** the active `data/` vector set is
+`K=3200`, `N=2`, `R=0.375`, `Eb/N0=1.0 dB`, `seed=57`. The channel hard BER is
+`544/3200 = 0.170000`; the RTL final intrinsic `L_D` BER is
+`1/3200 = 0.0003125`. RTL final intrinsic, hard-bit, and final extrinsic
+outputs match both `scripts/turbo_ref_model.py` and
+`scripts/windowed_parallel_ber.py --decoder radix4` with zero mismatches.
 
 ---
 
@@ -315,7 +326,10 @@ This handles the partial last window without requiring a shortened step counter 
 | Comparison script      | `compare_results.py`    | Bit-level comparison of RTL vs golden hex     |
 | Human-readable dump    | `input_llr_readable.txt`| Decimal table of all LLR inputs               |
 
-**Testbench memory model:** `llr_mem[0:4095]` with 1-cycle read latency. Out-of-range addresses (≥3072) return zero — simulating the external controller's zero-padding behaviour for the partial last window.
+**Testbench memory model:** the current deterministic testbench loads folded
+K=3200/N=2 BRAM files from `data/`, including 3 tail trellis steps for the last
+core. Out-of-range addresses beyond the valid local trellis length return zero,
+which supplies the final radix-4 padding step.
 
 ---
 

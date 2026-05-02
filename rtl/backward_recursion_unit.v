@@ -70,6 +70,17 @@ module backward_recursion_unit (
     wire signed [7:0] bm_r4_24, bm_r4_25, bm_r4_26, bm_r4_27;
     wire signed [7:0] bm_r4_28, bm_r4_29, bm_r4_30, bm_r4_31;
 
+    // Registered branch metrics break the routed gamma_mem -> bm_radix4 -> ACS
+    // timing path. This adds one cycle per backward trellis step.
+    reg signed [7:0] bm_r4_0_q,  bm_r4_1_q,  bm_r4_2_q,  bm_r4_3_q;
+    reg signed [7:0] bm_r4_4_q,  bm_r4_5_q,  bm_r4_6_q,  bm_r4_7_q;
+    reg signed [7:0] bm_r4_8_q,  bm_r4_9_q,  bm_r4_10_q, bm_r4_11_q;
+    reg signed [7:0] bm_r4_12_q, bm_r4_13_q, bm_r4_14_q, bm_r4_15_q;
+    reg signed [7:0] bm_r4_16_q, bm_r4_17_q, bm_r4_18_q, bm_r4_19_q;
+    reg signed [7:0] bm_r4_20_q, bm_r4_21_q, bm_r4_22_q, bm_r4_23_q;
+    reg signed [7:0] bm_r4_24_q, bm_r4_25_q, bm_r4_26_q, bm_r4_27_q;
+    reg signed [7:0] bm_r4_28_q, bm_r4_29_q, bm_r4_30_q, bm_r4_31_q;
+
     bm_radix4 u_r4_from_gamma (
         .bm_r2_odd_0(gamma_rd_data_0),   .bm_r2_odd_1(gamma_rd_data_1),
         .bm_r2_odd_2(gamma_rd_data_2),   .bm_r2_odd_3(gamma_rd_data_3),
@@ -109,7 +120,7 @@ module backward_recursion_unit (
     // ACS for s''=000
     acs_r4 u_acs_0 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_0),  .bm_1(bm_r4_8),  .bm_2(bm_r4_16), .bm_3(bm_r4_24),
+        .bm_0(bm_r4_0_q),  .bm_1(bm_r4_8_q),  .bm_2(bm_r4_16_q), .bm_3(bm_r4_24_q),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(beta_init_0), .load_init(acs_load_init_reg),
         .sm_out(sm[0])
@@ -117,7 +128,7 @@ module backward_recursion_unit (
     // ACS for s''=001
     acs_r4 u_acs_1 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_1),  .bm_1(bm_r4_9),  .bm_2(bm_r4_17), .bm_3(bm_r4_25),
+        .bm_0(bm_r4_1_q),  .bm_1(bm_r4_9_q),  .bm_2(bm_r4_17_q), .bm_3(bm_r4_25_q),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(beta_init_1), .load_init(acs_load_init_reg),
         .sm_out(sm[1])
@@ -125,7 +136,7 @@ module backward_recursion_unit (
     // ACS for s''=010
     acs_r4 u_acs_2 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_2),  .bm_1(bm_r4_10), .bm_2(bm_r4_18), .bm_3(bm_r4_26),
+        .bm_0(bm_r4_2_q),  .bm_1(bm_r4_10_q), .bm_2(bm_r4_18_q), .bm_3(bm_r4_26_q),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(beta_init_2), .load_init(acs_load_init_reg),
         .sm_out(sm[2])
@@ -133,7 +144,7 @@ module backward_recursion_unit (
     // ACS for s''=011
     acs_r4 u_acs_3 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_3),  .bm_1(bm_r4_11), .bm_2(bm_r4_19), .bm_3(bm_r4_27),
+        .bm_0(bm_r4_3_q),  .bm_1(bm_r4_11_q), .bm_2(bm_r4_19_q), .bm_3(bm_r4_27_q),
         .sm_in_0(sm[0]), .sm_in_1(sm[2]), .sm_in_2(sm[4]), .sm_in_3(sm[6]),
         .init_val(beta_init_3), .load_init(acs_load_init_reg),
         .sm_out(sm[3])
@@ -141,7 +152,7 @@ module backward_recursion_unit (
     // ACS for s''=100
     acs_r4 u_acs_4 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_4),  .bm_1(bm_r4_12), .bm_2(bm_r4_20), .bm_3(bm_r4_28),
+        .bm_0(bm_r4_4_q),  .bm_1(bm_r4_12_q), .bm_2(bm_r4_20_q), .bm_3(bm_r4_28_q),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(beta_init_4), .load_init(acs_load_init_reg),
         .sm_out(sm[4])
@@ -149,7 +160,7 @@ module backward_recursion_unit (
     // ACS for s''=101
     acs_r4 u_acs_5 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_5),  .bm_1(bm_r4_13), .bm_2(bm_r4_21), .bm_3(bm_r4_29),
+        .bm_0(bm_r4_5_q),  .bm_1(bm_r4_13_q), .bm_2(bm_r4_21_q), .bm_3(bm_r4_29_q),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(beta_init_5), .load_init(acs_load_init_reg),
         .sm_out(sm[5])
@@ -157,7 +168,7 @@ module backward_recursion_unit (
     // ACS for s''=110
     acs_r4 u_acs_6 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_6),  .bm_1(bm_r4_14), .bm_2(bm_r4_22), .bm_3(bm_r4_30),
+        .bm_0(bm_r4_6_q),  .bm_1(bm_r4_14_q), .bm_2(bm_r4_22_q), .bm_3(bm_r4_30_q),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(beta_init_6), .load_init(acs_load_init_reg),
         .sm_out(sm[6])
@@ -165,7 +176,7 @@ module backward_recursion_unit (
     // ACS for s''=111
     acs_r4 u_acs_7 (
         .clk(clk), .rst_n(rst_n), .enable(acs_enable_reg),
-        .bm_0(bm_r4_7),  .bm_1(bm_r4_15), .bm_2(bm_r4_23), .bm_3(bm_r4_31),
+        .bm_0(bm_r4_7_q),  .bm_1(bm_r4_15_q), .bm_2(bm_r4_23_q), .bm_3(bm_r4_31_q),
         .sm_in_0(sm[1]), .sm_in_1(sm[3]), .sm_in_2(sm[5]), .sm_in_3(sm[7]),
         .init_val(beta_init_7), .load_init(acs_load_init_reg),
         .sm_out(sm[7])
@@ -177,15 +188,15 @@ module backward_recursion_unit (
     // Pipeline:
     //   Cycle 0: Load beta_init into ACS SMs. Issue read for addr=win_len_r4-1.
     //   Cycle 1: Memory data arrives (wait cycle).
-    //   Cycle 2: Gamma R4 BMs ready. Enable ACS. Output beta + beta_valid.
-    //            Issue next read addr. Continue.
+    //   Cycle 2: Gamma R4 BMs ready; register radix-4 BMs.
+    //   Cycle 3: Enable ACS. Output beta + beta_valid. Issue next read addr.
     //   ...decrement until step 0.
     // =========================================================================
-    reg [1:0] pipe_state;
-    localparam PIPE_IDLE      = 2'd0;
-    localparam PIPE_INIT      = 2'd1;
-    localparam PIPE_WAIT_MEM  = 2'd2;
-    localparam PIPE_RUNNING   = 2'd3;
+    reg [2:0] pipe_state;
+    localparam PIPE_IDLE       = 3'd0;
+    localparam PIPE_WAIT_MEM   = 3'd1;
+    localparam PIPE_CAPTURE_BM = 3'd2;
+    localparam PIPE_RUNNING    = 3'd3;
 
     reg [3:0] rd_step;
 
@@ -224,13 +235,33 @@ module backward_recursion_unit (
                 end
 
                 PIPE_WAIT_MEM: begin
-                    // Memory data will be available next cycle
+                    // Memory data will be visible to this unit next cycle.
+                    pipe_state <= PIPE_CAPTURE_BM;
+                end
+
+                PIPE_CAPTURE_BM: begin
+                    bm_r4_0_q  <= bm_r4_0;  bm_r4_1_q  <= bm_r4_1;
+                    bm_r4_2_q  <= bm_r4_2;  bm_r4_3_q  <= bm_r4_3;
+                    bm_r4_4_q  <= bm_r4_4;  bm_r4_5_q  <= bm_r4_5;
+                    bm_r4_6_q  <= bm_r4_6;  bm_r4_7_q  <= bm_r4_7;
+                    bm_r4_8_q  <= bm_r4_8;  bm_r4_9_q  <= bm_r4_9;
+                    bm_r4_10_q <= bm_r4_10; bm_r4_11_q <= bm_r4_11;
+                    bm_r4_12_q <= bm_r4_12; bm_r4_13_q <= bm_r4_13;
+                    bm_r4_14_q <= bm_r4_14; bm_r4_15_q <= bm_r4_15;
+                    bm_r4_16_q <= bm_r4_16; bm_r4_17_q <= bm_r4_17;
+                    bm_r4_18_q <= bm_r4_18; bm_r4_19_q <= bm_r4_19;
+                    bm_r4_20_q <= bm_r4_20; bm_r4_21_q <= bm_r4_21;
+                    bm_r4_22_q <= bm_r4_22; bm_r4_23_q <= bm_r4_23;
+                    bm_r4_24_q <= bm_r4_24; bm_r4_25_q <= bm_r4_25;
+                    bm_r4_26_q <= bm_r4_26; bm_r4_27_q <= bm_r4_27;
+                    bm_r4_28_q <= bm_r4_28; bm_r4_29_q <= bm_r4_29;
+                    bm_r4_30_q <= bm_r4_30; bm_r4_31_q <= bm_r4_31;
                     pipe_state <= PIPE_RUNNING;
                 end
 
                 PIPE_RUNNING: begin
-                    // Memory data is now valid for rd_step
-                    // Enable ACS to compute backward update using these BMs
+                    // Registered BMs are valid for rd_step. Enable ACS to
+                    // compute the backward update using these BMs.
                     acs_enable_reg <= 1'b1;
 
                     // Output current beta to LLR compute

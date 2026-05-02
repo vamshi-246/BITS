@@ -8,8 +8,9 @@
 //==============================================================================
 module tb_bcjr_core;
 
-    localparam FRAME_LEN = 3072; // 6144/2 = 3072 per core (2 SISO modules)
-    localparam WIN_LEN   = 30;  // Trellis steps per window
+    localparam [11:0] FRAME_LEN = 12'd1600; // 3200/2 = 1600 per core (2 SISO modules)
+    localparam WIN_LEN = 30;  // Trellis steps per window
+    parameter CORE_ID_PARAM = 0;
 
     // =========================================================================
     // Clock & Reset
@@ -45,6 +46,7 @@ module tb_bcjr_core;
     wire [11:0] fr_llr_addr;
     wire [11:0] br_llr_addr;
     wire [11:0] dbr_llr_addr;
+    wire        fr_dummy_active;
     reg         llr_valid;
     
     reg signed [4:0] fr_sys_odd, fr_sys_even;
@@ -61,6 +63,8 @@ module tb_bcjr_core;
 
     wire signed [5:0] llr_extr_odd_out;
     wire signed [5:0] llr_extr_even_out;
+    wire signed [9:0] llr_intr_odd_out;
+    wire signed [9:0] llr_intr_even_out;
     wire [11:0]       llr_out_addr;
     wire              llr_out_valid;
 
@@ -68,20 +72,21 @@ module tb_bcjr_core;
     // Device Under Test
     // =========================================================================
     bcjr_core #(
-        .CORE_ID(0),
+        .CORE_ID(CORE_ID_PARAM),
         .NUM_SISO(2),
-        .NUM_WINDOWS(103)   // ceil(3072/30) = 103
+        .NUM_WINDOWS(54)    // ceil((1600 + tail margin)/30) = 54
     ) dut (
         .clk(clk),
         .rst_n(rst_n),
         .start(start),
-        .frame_len(FRAME_LEN),
+        .output_len(FRAME_LEN),
         .done(done),
 
         .llr_req(llr_req),
         .fr_llr_addr(fr_llr_addr),
         .br_llr_addr(br_llr_addr),
         .dbr_llr_addr(dbr_llr_addr),
+        .fr_dummy_active(fr_dummy_active),
         .llr_valid(llr_valid),
 
         .fr_sys_odd(fr_sys_odd),   .fr_sys_even(fr_sys_even),
@@ -98,6 +103,8 @@ module tb_bcjr_core;
 
         .llr_extr_odd_out(llr_extr_odd_out),
         .llr_extr_even_out(llr_extr_even_out),
+        .llr_intr_odd_out(llr_intr_odd_out),
+        .llr_intr_even_out(llr_intr_even_out),
         .llr_out_addr(llr_out_addr),
         .llr_out_valid(llr_out_valid)
     );

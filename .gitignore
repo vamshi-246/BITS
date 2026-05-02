@@ -1,1 +1,47 @@
-tb_turbo_decoder.vcd
+__pycache__/
+*.py[cod]
+
+# LaTeX/editor/generated scratch
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
+*.out
+
+# Simulation/build outputs
+build/
+*.vcd
+*.vvp
+
+# Vivado local/generated outputs
+.Xil/
+*.jou
+*.log
+*.backup.jou
+*.backup.log
+*.dcp
+*.bit
+*.ltx
+*.pb
+*.rpx
+*.wdb
+*.str
+*.xpr
+*.runs/
+*.srcs/
+*.gen/
+*.hw/
+*.ip_user_files/
+reports/
+runme.log
+
+# Root-level generated implementation reports
+final_*_report.txt
+implementation_timing_report*.txt
+timing_report*.txt
+utilization*.txt
+
+# Local hardware captures; regenerate from Vivado CSV when needed
+fpga_bringup/fpga_button_ila_*.txt
+fpga_bringup/fpga_button_ila_*.csv

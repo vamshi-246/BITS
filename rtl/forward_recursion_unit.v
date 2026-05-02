@@ -26,10 +26,10 @@ module forward_recursion_unit #(
     input  wire signed [4:0]          apr_odd, apr_even,
     // Alpha memory write port
     output reg  [3:0]                 alpha_wr_addr,
-    output wire signed [9:0]          alpha_wr_data_0, alpha_wr_data_1,
-    output wire signed [9:0]          alpha_wr_data_2, alpha_wr_data_3,
-    output wire signed [9:0]          alpha_wr_data_4, alpha_wr_data_5,
-    output wire signed [9:0]          alpha_wr_data_6, alpha_wr_data_7,
+    output reg  signed [9:0]          alpha_wr_data_0, alpha_wr_data_1,
+    output reg  signed [9:0]          alpha_wr_data_2, alpha_wr_data_3,
+    output reg  signed [9:0]          alpha_wr_data_4, alpha_wr_data_5,
+    output reg  signed [9:0]          alpha_wr_data_6, alpha_wr_data_7,
     output reg                        alpha_wr_en,
     // Gamma memory write port (stores 32 R2 BMs)
     output reg  [3:0]                 gamma_wr_addr,
@@ -147,6 +147,27 @@ module forward_recursion_unit #(
         .bm_r4_28(bm_r4_28), .bm_r4_29(bm_r4_29), .bm_r4_30(bm_r4_30), .bm_r4_31(bm_r4_31)
     );
 
+    wire signed [BM_R4_W-1:0] bm_r4_w [0:31];
+    reg  signed [BM_R4_W-1:0] bm_r4_r [0:31];
+    reg                       bm_valid_r;
+
+    assign bm_r4_w[0]  = bm_r4_0;  assign bm_r4_w[1]  = bm_r4_1;
+    assign bm_r4_w[2]  = bm_r4_2;  assign bm_r4_w[3]  = bm_r4_3;
+    assign bm_r4_w[4]  = bm_r4_4;  assign bm_r4_w[5]  = bm_r4_5;
+    assign bm_r4_w[6]  = bm_r4_6;  assign bm_r4_w[7]  = bm_r4_7;
+    assign bm_r4_w[8]  = bm_r4_8;  assign bm_r4_w[9]  = bm_r4_9;
+    assign bm_r4_w[10] = bm_r4_10; assign bm_r4_w[11] = bm_r4_11;
+    assign bm_r4_w[12] = bm_r4_12; assign bm_r4_w[13] = bm_r4_13;
+    assign bm_r4_w[14] = bm_r4_14; assign bm_r4_w[15] = bm_r4_15;
+    assign bm_r4_w[16] = bm_r4_16; assign bm_r4_w[17] = bm_r4_17;
+    assign bm_r4_w[18] = bm_r4_18; assign bm_r4_w[19] = bm_r4_19;
+    assign bm_r4_w[20] = bm_r4_20; assign bm_r4_w[21] = bm_r4_21;
+    assign bm_r4_w[22] = bm_r4_22; assign bm_r4_w[23] = bm_r4_23;
+    assign bm_r4_w[24] = bm_r4_24; assign bm_r4_w[25] = bm_r4_25;
+    assign bm_r4_w[26] = bm_r4_26; assign bm_r4_w[27] = bm_r4_27;
+    assign bm_r4_w[28] = bm_r4_28; assign bm_r4_w[29] = bm_r4_29;
+    assign bm_r4_w[30] = bm_r4_30; assign bm_r4_w[31] = bm_r4_31;
+
     // =========================================================================
     // 8× ACS units — FORWARD direction
     //
@@ -162,6 +183,7 @@ module forward_recursion_unit #(
     // =========================================================================
     wire signed [SM_W-1:0] sm [0:7]; // alpha state metrics (read from ACS outputs)
     reg acs_load_init; // asserted during init_sm cycle
+    wire acs_en = bm_valid_r;
     
     // Init values: CORE_ID=0 gets known initial state, others get all-zero
     wire signed [SM_W-1:0] acs_init_0 = (CORE_ID == 0) ? 10'sd0   : 10'sd0;
@@ -175,77 +197,72 @@ module forward_recursion_unit #(
 
     // ACS for dest=000: preds={000,001,010,011}
     acs_r4 u_acs_0 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_0),  .bm_1(bm_r4_1),  .bm_2(bm_r4_2),  .bm_3(bm_r4_3),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[0]),  .bm_1(bm_r4_r[1]),  .bm_2(bm_r4_r[2]),  .bm_3(bm_r4_r[3]),
         .sm_in_0(sm[0]), .sm_in_1(sm[1]), .sm_in_2(sm[2]), .sm_in_3(sm[3]),
         .init_val(acs_init_0), .load_init(acs_load_init),
         .sm_out(sm[0])
     );
     // ACS for dest=001: preds={100,101,110,111}
     acs_r4 u_acs_1 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_4),  .bm_1(bm_r4_5),  .bm_2(bm_r4_6),  .bm_3(bm_r4_7),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[4]),  .bm_1(bm_r4_r[5]),  .bm_2(bm_r4_r[6]),  .bm_3(bm_r4_r[7]),
         .sm_in_0(sm[4]), .sm_in_1(sm[5]), .sm_in_2(sm[6]), .sm_in_3(sm[7]),
         .init_val(acs_init_1), .load_init(acs_load_init),
         .sm_out(sm[1])
     );
     // ACS for dest=010: preds={000,001,010,011}
     acs_r4 u_acs_2 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_8),  .bm_1(bm_r4_9),  .bm_2(bm_r4_10), .bm_3(bm_r4_11),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[8]),  .bm_1(bm_r4_r[9]),  .bm_2(bm_r4_r[10]), .bm_3(bm_r4_r[11]),
         .sm_in_0(sm[0]), .sm_in_1(sm[1]), .sm_in_2(sm[2]), .sm_in_3(sm[3]),
         .init_val(acs_init_2), .load_init(acs_load_init),
         .sm_out(sm[2])
     );
     // ACS for dest=011: preds={100,101,110,111}
     acs_r4 u_acs_3 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_12), .bm_1(bm_r4_13), .bm_2(bm_r4_14), .bm_3(bm_r4_15),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[12]), .bm_1(bm_r4_r[13]), .bm_2(bm_r4_r[14]), .bm_3(bm_r4_r[15]),
         .sm_in_0(sm[4]), .sm_in_1(sm[5]), .sm_in_2(sm[6]), .sm_in_3(sm[7]),
         .init_val(acs_init_3), .load_init(acs_load_init),
         .sm_out(sm[3])
     );
     // ACS for dest=100: preds={000,001,010,011}
     acs_r4 u_acs_4 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_16), .bm_1(bm_r4_17), .bm_2(bm_r4_18), .bm_3(bm_r4_19),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[16]), .bm_1(bm_r4_r[17]), .bm_2(bm_r4_r[18]), .bm_3(bm_r4_r[19]),
         .sm_in_0(sm[0]), .sm_in_1(sm[1]), .sm_in_2(sm[2]), .sm_in_3(sm[3]),
         .init_val(acs_init_4), .load_init(acs_load_init),
         .sm_out(sm[4])
     );
     // ACS for dest=101: preds={100,101,110,111}
     acs_r4 u_acs_5 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_20), .bm_1(bm_r4_21), .bm_2(bm_r4_22), .bm_3(bm_r4_23),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[20]), .bm_1(bm_r4_r[21]), .bm_2(bm_r4_r[22]), .bm_3(bm_r4_r[23]),
         .sm_in_0(sm[4]), .sm_in_1(sm[5]), .sm_in_2(sm[6]), .sm_in_3(sm[7]),
         .init_val(acs_init_5), .load_init(acs_load_init),
         .sm_out(sm[5])
     );
     // ACS for dest=110: preds={000,001,010,011}
     acs_r4 u_acs_6 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_24), .bm_1(bm_r4_25), .bm_2(bm_r4_26), .bm_3(bm_r4_27),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[24]), .bm_1(bm_r4_r[25]), .bm_2(bm_r4_r[26]), .bm_3(bm_r4_r[27]),
         .sm_in_0(sm[0]), .sm_in_1(sm[1]), .sm_in_2(sm[2]), .sm_in_3(sm[3]),
         .init_val(acs_init_6), .load_init(acs_load_init),
         .sm_out(sm[6])
     );
     // ACS for dest=111: preds={100,101,110,111}
     acs_r4 u_acs_7 (
-        .clk(clk), .rst_n(rst_n), .enable(active),
-        .bm_0(bm_r4_28), .bm_1(bm_r4_29), .bm_2(bm_r4_30), .bm_3(bm_r4_31),
+        .clk(clk), .rst_n(rst_n), .enable(acs_en),
+        .bm_0(bm_r4_r[28]), .bm_1(bm_r4_r[29]), .bm_2(bm_r4_r[30]), .bm_3(bm_r4_r[31]),
         .sm_in_0(sm[4]), .sm_in_1(sm[5]), .sm_in_2(sm[6]), .sm_in_3(sm[7]),
         .init_val(acs_init_7), .load_init(acs_load_init),
         .sm_out(sm[7])
     );
 
     // =========================================================================
-    // Alpha & gamma write data (directly from ACS outputs and R2 BMs)
+    // Alpha & gamma write data
     // =========================================================================
-    assign alpha_wr_data_0 = sm[0]; assign alpha_wr_data_1 = sm[1];
-    assign alpha_wr_data_2 = sm[2]; assign alpha_wr_data_3 = sm[3];
-    assign alpha_wr_data_4 = sm[4]; assign alpha_wr_data_5 = sm[5];
-    assign alpha_wr_data_6 = sm[6]; assign alpha_wr_data_7 = sm[7];
-
     assign gamma_wr_data_0  = bm_r2_odd_0;  assign gamma_wr_data_1  = bm_r2_odd_1;
     assign gamma_wr_data_2  = bm_r2_odd_2;  assign gamma_wr_data_3  = bm_r2_odd_3;
     assign gamma_wr_data_4  = bm_r2_odd_4;  assign gamma_wr_data_5  = bm_r2_odd_5;
@@ -267,6 +284,8 @@ module forward_recursion_unit #(
     // Control FSM
     // =========================================================================
     reg active_prev;
+    reg [3:0] acs_step_cnt;
+    integer bm_i;
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -275,25 +294,48 @@ module forward_recursion_unit #(
             gamma_wr_addr <= 4'd0;
             alpha_wr_en   <= 1'b0;
             gamma_wr_en   <= 1'b0;
+            alpha_wr_data_0 <= 10'sd0; alpha_wr_data_1 <= 10'sd0;
+            alpha_wr_data_2 <= 10'sd0; alpha_wr_data_3 <= 10'sd0;
+            alpha_wr_data_4 <= 10'sd0; alpha_wr_data_5 <= 10'sd0;
+            alpha_wr_data_6 <= 10'sd0; alpha_wr_data_7 <= 10'sd0;
             window_done   <= 1'b0;
             acs_load_init <= 1'b0;
             active_prev   <= 1'b0;
+            acs_step_cnt  <= 4'd0;
+            bm_valid_r    <= 1'b0;
+            for (bm_i = 0; bm_i < 32; bm_i = bm_i + 1)
+                bm_r4_r[bm_i] <= {BM_R4_W{1'b0}};
         end else begin
             window_done   <= 1'b0;
             acs_load_init <= 1'b0;
             active_prev   <= active;
+            bm_valid_r    <= 1'b0;
 
             // Initialize ACS state metrics on init_sm pulse
             if (init_sm) begin
                 acs_load_init <= 1'b1;
                 step_cnt      <= 4'd0;
+                acs_step_cnt  <= 4'd0;
+                bm_valid_r    <= 1'b0;
             end
 
             if (active) begin
+                bm_valid_r <= 1'b1;
+                for (bm_i = 0; bm_i < 32; bm_i = bm_i + 1)
+                    bm_r4_r[bm_i] <= bm_r4_w[bm_i];
+
                 // Write alpha and gamma on every active cycle (unless dummy pass)
                 if (!is_dummy) begin
                     alpha_wr_en   <= 1'b1;
                     alpha_wr_addr <= step_cnt;
+                    // Store alpha before this radix-4 transition. alpha_mem's
+                    // registered write occurs one cycle later, so these data
+                    // registers keep the correct pre-transition metrics aligned
+                    // with the gamma written for the same step.
+                    alpha_wr_data_0 <= sm[0]; alpha_wr_data_1 <= sm[1];
+                    alpha_wr_data_2 <= sm[2]; alpha_wr_data_3 <= sm[3];
+                    alpha_wr_data_4 <= sm[4]; alpha_wr_data_5 <= sm[5];
+                    alpha_wr_data_6 <= sm[6]; alpha_wr_data_7 <= sm[7];
                     gamma_wr_en   <= 1'b1;
                     gamma_wr_addr <= step_cnt;
                 end else begin
@@ -303,7 +345,6 @@ module forward_recursion_unit #(
 
                 // Step counter
                 if (step_cnt == win_len_r4 - 4'd1) begin
-                    window_done <= 1'b1;
                     step_cnt    <= 4'd0;
                 end else begin
                     step_cnt <= step_cnt + 4'd1;
@@ -311,6 +352,15 @@ module forward_recursion_unit #(
             end else begin
                 alpha_wr_en <= 1'b0;
                 gamma_wr_en <= 1'b0;
+            end
+
+            if (bm_valid_r) begin
+                if (acs_step_cnt == win_len_r4 - 4'd1) begin
+                    window_done  <= 1'b1;
+                    acs_step_cnt <= 4'd0;
+                end else begin
+                    acs_step_cnt <= acs_step_cnt + 4'd1;
+                end
             end
         end
     end

@@ -1,0 +1,21 @@
+Floating-Point Full-Block Turbo Decoder Results
+=================================================
+Data directory: C:\VAMSHI\IIT Mandi Academic Folder\IITM 6th Sem\DVAD\BITS_LTE_Parallel_Turbo_Decoder\data
+K: 6144
+Half iterations: 11
+Mode: maxlog
+Extrinsic scale: 0.6875
+Extrinsic clip bits: 0
+A-priori clip bits: 0
+Input source: 5-bit quantized BRAM LLR files
+
+BER definition: original transmitted bit versus hard_decision(final intrinsic L_D)
+Hard decision: L_D < 0 -> bit 1, else bit 0
+
+Channel hard decisions: 1161/6144 = 0.188965
+Floating full-block final L_D: 197/6144 = 0.032064
+
+Output files:
+  float_full_block_maxlog_intrinsic.txt
+  float_full_block_maxlog_extrinsic.txt
+  float_full_block_maxlog_hard_bits.txt

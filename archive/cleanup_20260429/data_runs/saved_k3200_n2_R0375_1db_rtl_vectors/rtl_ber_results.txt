@@ -1,0 +1,12 @@
+RTL Testbench BER Results
+=========================
+K: 3200
+NUM_SISO: 2
+Segment length: 1600
+Tail trellis steps: 3
+Paper boundary mode: 1
+Half iterations: 11
+BER signal: final intrinsic L_D hard decision
+Errors: 0
+Bits: 3200
+BER: 0.000000000000

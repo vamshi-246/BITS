@@ -1,0 +1,722 @@
+TO APPEAR IN IEEE JOURNAL OF SOLID-STATE CIRCUITS 2011                                                                                           1
+
+
+
+
+                 Design and Implementation of a Parallel
+                  Turbo-Decoder ASIC for 3GPP-LTE
+                         Christoph Studer, Student Member, IEEE, Christian Benkeser Member, IEEE,
+                                      Sandro Belfanti, and Qiuting Huang Fellow, IEEE
+
+
+
+   Abstract—Turbo-decoding for the 3GPP-LTE (Long Term                          power consumption. The fact that none of the recently reported
+Evolution) wireless communication standard is among the most                    parallel turbo-decoders [5]–[7] achieves the LTE peak data-rate
+challenging tasks in terms of computational complexity and                      or provides desirable power consumption for battery-powered
+power consumption of corresponding cellular devices. This paper
+addresses design and implementation aspects of parallel turbo-                  devices of less than 100 mW at the 100 Mb/s milestone,
+decoders that reach the 326.4 Mb/s LTE peak data-rate using                     indicates that the architecture design for such decoders is a
+multiple soft-input soft-output decoders that operate in parallel.              challenging task.
+To highlight the effectiveness of our design-approach, we realized                 1) Contributions: In this work, we discuss concepts and
+a 3.57 mm2 radix-4-based 8× parallel turbo-decoder ASIC in
+                                                                                architectures which allow for the power-efficient implemen-
+0.13 µm CMOS technology achieving 390 Mb/s. At the more
+realistic 100 Mb/s LTE milestone targeted by industry today, the                tation of high-throughput parallel turbo-decoding for LTE.
+turbo-decoder consumes only 69 mW.                                              To this end, we investigate the associated throughput/area
+                                                                                tradeoffs for the identification of the key design parameters
+  Index Terms—3G mobile communication, LTE, parallel turbo-
+decoder, ASIC implementation, low-power, radix-4                                and optimize the most crucial design blocks. To alleviate the
+                                                                                design-inherent interleaver bottleneck, we describe a memory
+                                                                                architecture that supports the bandwidth required by LTE and
+                          I. I NTRODUCTION                                      present a general architecture solution—referred to as Master-
+      URING the last few years, 3G wireless communication                       Slave Batcher network—suitable for maximally-vectorizable
+D     standards, such as HSDPA [2], firmly established them-
+selves as an enabling technology for data-centric communica-
+                                                                                contention-free interleavers. We furthermore detail a radix-4-
+                                                                                based SISO decoder architecture that enables high-throughput
+tion. The advent of smart-phones, netbooks, and other mobile                    turbo-decoding. As a proof-of-concept, we show an 8× par-
+broadband devices finally ushered in an era of throughput-                      allel ASIC prototype achieving the LTE peak data-rate and
+intensive wireless applications. The rapid increase in wireless                 the 100 Mb/s milestone at low power, and finally compare the
+data traffic now begins to strain the network capacity and                      key characteristics to that of other measured turbo-decoder
+operators are looking for novel technologies enabling even                      ASICs [5]–[7].
+higher data-rates than those achieved by HSDPA. Recently,                          2) Outline: The remainder of the paper is organized as
+the new air interface standard LTE (Long Term Evolution) [3]                    follows. Section II reviews the principles of turbo-decoding
+has been defined by the standards body 3GPP and aims at                         and details the algorithm used for SISO decoding. The parallel
+improving the data-rates by more than 30× (compared to that                     turbo-decoder architecture is presented in Section III and
+of HSDPA) in the next few years. Theoretically, LTE supports                    the corresponding throughput/area tradeoffs are studied. The
+up to 326.4 Mb/s [4], whereas the industry plans to realize the                 interleaver architecture is detailed in Section IV and Section V
+first milestone at about 100 Mb/s in 1-or-2 years.                              describes the architecture of the SISO decoder. Section VI
+   LTE specifies the use of turbo-codes to ensure reliable com-                 provides ASIC-implementation results and a comparison with
+munication. Parallel turbo-decoding, which deploys multiple                     existing turbo-decoders. We conclude in Section VII.
+soft-input soft-output (SISO) decoders operating concurrently,
+will be the key for achieving the high data-rates offered by
+                                                                                              II. T URBO -D ECODING FOR LTE
+LTE. However, the implementation of such will be among
+the main challenges in terms of computational intensity and                        Turbo codes [8], capable of achieving close-to-Shannon
+                                                                                capacity and amenable to hardware-efficient implementation,
+   This paper was presented in part at the IEEE International Solid-State       have been adopted by many wireless communication stan-
+Circuits Conference (ISSCC), San Francisco, CA, USA, Feb. 2009 [1].
+   C. Studer is with the Communication Technology Laboratory (CTL),             dards, including HSDPA [2] and LTE [3]. The turbo encoder
+ETH Zurich, 8092 Zurich, Switzerland, (e-mail: studerc@nari.ee.ethz.ch).        specified in the LTE standard is illustrated in the left-hand side
+C. Benkeser and Q. Huang are with the Integrated Systems Laboratory             (LHS) of Fig. 1 and consists of a feed-through, two 8-state
+(IIS), ETH Zurich, 8092 Zurich, Switzerland (e-mail: benkeser@iis.ee.ethz.ch;
+huang@iis.ee.ethz.ch).                                                          recursive convolutional encoders (CEs), and an interleaver.
+   The authors would like to thank S. Schläpfer and F. Gürkaynak for            The feed-through passes one block of K information bits xk ,
+their assistance during the ASIC design. Furthermore, the authors gratefully    k = 0, . . . , K − 1, to the output of the encoder, which are then
+acknowledge the support of H. Bölcskei, A. Burg, N. Felber, W. Fichter, and
+H. Kaeslin.                                                                     referred to as systematic bits xsk = xk . From the systematic
+   Digital Object Identifier XXX-XXX-XXX                                        bits, the first CE generates a sequence of parity bits xp1 k . The
+                                                                 XXXXX.00 © 2011 IEEE
+2                                                                                                             TO APPEAR IN IEEE JOURNAL OF SOLID-STATE CIRCUITS 2011
+
+
+
+
+              1st conv.                                                    SISO
+
+
+
+
+                            wireless transmission
+              encoder                                                     decoder
+
+     inter-                                          inter-   de-inter-                 inter-
+    leaver                                          leaver     leaver     iterations   leaver
+
+
+
+              2nd conv.                                                    SISO
+               encoder                                                    decoder
+                                                                                                   ...               ...               ...        ...               ...
+
+
+Fig. 1. Left: Parallel-concatenated turbo-encoder. Right: Simplified block-
+diagram of a turbo-decoder.
+                                                                                                 Fig. 2. Left: Radix-2 forward state-metric recursion for two trellis-steps.
+                                                                                                 Right: Radix-4 forward state-metric recursion.
+
+second CE receives an interleaved sequence of the information
+bits xπ(k) , where π(k) stands for the interleaved address
+                                                                                                 corresponding to the states of the CEs and branches indicating
+associated with address k, and generates a second sequence of
+                                                                                                 admissible state-transitions. Each transition from a state s0
+parity bits xp2 . The systematic bits are then transmitted, along
+                                                                                                 (trellis-step k − 1) to s (trellis-step k) is associated with a
+with both parity-bit sequences, over the wireless channel.
+                                                                                                 branch-metric γk (s0 , s) (refer to [11], [12] for details). The
+In the receiver, a soft-output detector computes reliability
+                                                                                                 BCJR algorithm in its original form is impractical due to large
+information in the form of log-likelihood ratios (LLRs) for
+                                                                                                 memory requirements and the computation of transcendental
+the transmitted bits xsk , xp1        p2
+                            k and xk [8]; the resulting LLRs
+  s   p1         p2                                                                              functions. We adopt an approximate algorithm [11], [13], as
+Lk , Lk and Lk indicate the probability of the corresponding
+                                                                                                 briefly described below.
+bits being a binary 1 or 0.
+                                                                                                    1) Max-log approximation: The BCJR algorithm traverses
+                                                                                                 the trellis in both forward and backward directions to compute
+A. Turbo-Decoding Algorithm                                                                      the state-metrics αk (s) and βk (s) recursively for all eight
+   Decoding of turbo-codes is usually performed with the                                         states. To avoid transcendental functions, we apply the max-
+algorithm proposed in [8]. The main idea is depicted on the                                      log approximation to the forward state-metric recursions [11]
+right-hand side (RHS) of Fig. 1 and amounts to iteratively
+                                                                                                               αk (s) = max αk−1 (s00 ) + γk (s00 , s),
+                                                                                                                            
+exchanging extrinsic LLRs LE1   k    and LE2
+                                           k  between the two
+SISO decoders (SDs) to improve the error-rate performance                                                                         αk−1 (s02 ) + γk (s02 , s)              (1)
+successively. The first and second SD perform decoding of
+the convolutional code generated by the first or the second CE,                                  where s00 and s02 correspond to the two possible predecessor
+respectively. One pass by both the first and the second SD is                                    states of s (see Fig. 2). The backward state-metrics βk (s0 )
+referred to as a full-iteration; the operation performed by a                                    are computed similarly to (1) in the opposite direction. Both
+single SD a half-iteration. The total number of full-iterations                                  recursions can be performed efficiently based on hardware-
+for each code block is denoted by I (e.g., 11 half-iterations                                    friendly add-compare-select (ACS) operations.
+correspond to I = 5.5).                                                                             After all forward and backward state-metrics, the intrinsic
+   Each SD computes intrinsic a-posteriori LLRs LD1           k
+                                                                                                 LLRs are calculated. To this end, the SD considers the state
+and LD2k , for the transmitted bits, based on the systematic
+                                                                                                 transitions (s0 , s) associated with xsk = 0 and those with xsk =
+LLRs in natural Lsk or interleaved order Lsπ(k) , on the parity                                  1 and computes the intrinsic LLRs according to
+LLRs Lp1         p2
+         k or Lk , and on the so-called a-priori LLRs Lk
+                                                              A1
+                                                                                                   LD1,D2                   αk−1 (s0 ) + γk (s0 , s) + βk (s)
+                                                                                                                           
+     A2                                                                                              k     ≈ 0 maxs
+or Lk . For the first half-iteration, the a-priori LLRs are set                                               (s ,s):xk =0
+to zero (i.e., LA1
+                k = 0, ∀k). In subsequent iterations, each SD                                                                  αk−1 (s0 ) + γk (s0 , s) + βk (s) . (2)
+                                                                                                                             
+                                                                                                             − 0 maxs
+i ∈ {1, 2} uses the extrinsic LLRs LEi        Di       s
+                                         k = Lk − Lk + Lk
+                                                             Ai                                                   (s ,s):xk =1
+
+computed by the other SD in the previous half-iteration as
+                                                                                                 The max-log approximation entails a mismatch in the output
+a-priori LLRs, i.e., LA1k  = LE2              A2
+                                π −1 (k) and Lk   = LE1π(k) (see                                 LLRs, which can (at least partially) be compensated by a tech-
+Fig. 1). After a given number of half-iterations, the turbo-
+                                                                                                 nique known as extrinsic scaling [14], [15] (cf. Section VI-A).
+decoder generates estimates for the information bits based on
+                                                                                                    2) Windowing: Computation of the intrinsic LLRs (2)
+the sign of the intrinsic LLRs.
+                                                                                                 requires storage of either all forward or all backward state-
+                                                                                                 metrics. For the maximum code-block length specified in LTE,
+B. Radix-4 Max-Log M-BCJR Algorithm                                                              K = 6144, 8×6144 state-metrics need to be stored. To signif-
+   The maximum a-posteriori (MAP) SISO decoding algorithm                                        icantly reduce such large memory requirements, windowing is
+developed by Bahl, Cocke, Jelinek, and Raviv (BCJR) [9]                                          usually employed [13]. In this approach the trellis is processed
+forms the basis of the SD used in this work. The BCJR                                            in small windows of M trellis-steps and the intrinsic LLRs are
+algorithm resembles the Viterbi algorithm [10] and traverses                                     computed only on the basis of the state-metrics obtained within
+a trellis representing the convolutional code to compute the                                     each window. The corresponding procedure, summarized next,
+intrinsic LLRs LkD1,D2 . Fig. 2 shows such a trellis, with nodes                                 will be referred to as the M-BCJR algorithm.
+STUDER, BENKESER, BELFANTI, AND HUANG                                                                                                                   3
+
+
+
+   The forward recursion computes the αk (s) as in (1) and                     in hardware. Specifically, address-computation for QPP inter-
+stores the M forward state-metrics associated with the mth                     leavers is carried out according to
+window. Since the backward recursion progresses from the
+                                                                                               π(k) = f1 k + f2 k 2
+                                                                                                                    
+                                                                                                                      mod K              (5)
+end of a window to its beginning, suitable initial values have
+to be generated. To this end, a dummy backward recursion                       where f1 and f2 are suitably chosen interleaver parameters that
+is carried out in the next window m + 1 to provide initial                     depend on the code-block length K. For k ∈ {0, 1, . . . , K −
+values for the backward state-metrics βk (s) computed in                       1}, interleaved addresses can be generated by means of the
+window m. With the aid of the stored forward state-metrics                     following recursion [20]
+of the mth window, the intrinsic LLRs (2) are computed                                                               
+simultaneously with the backward state-metric recursion. As                                 π(k + 1) = π(k) + δ(k) mod K
+                                                                                                                 
+a consequence of windowing, the M-BCJR algorithm can be                                     δ(k + 1) = δ(k) + b mod K                      (6)
+started at arbitrary steps in the trellis, an ability essential for
+                                                                               where π(0) = 0, δ(0) = f1 + f2 , and b = 2f2 . The
+parallel turbo-decoding (see Section III). To this end, a dummy
+                                                                               recursion can be implemented efficiently in hardware because
+forward-recursion is carried out once to compute the state-
+                                                                               only additions and modulo operations are involved. Indeed, as
+metrics αk0 (s) for one window, which are then used as initial
+                                                                               QPP interleavers map even addresses to even addresses and
+state-metrics for the remaining forward recursions.
+                                                                               odd to odd [19], they facilitate efficient address-generation for
+   Numerical simulations for the rate-1/3 LTE turbo-code
+                                                                               radix-4 recursions; in addition, (6) can also be formulated for
+show that a window length of M = 30 yields close-to-optimal
+                                                                               other address-increments (e.g., for even-numbered addresses).
+performance (see Fig. 9). Code rates closer to 1 have also been
+specified in LTE to take advantage of any exceptionally high-
+                                                                                    III. PARALLEL T URBO -D ECODER A RCHITECTURE
+SNR/low-EVM scenarios to achieve additional throughput
+improvements. To support such higher code-rates, our radix-                       The critical path of non-parallel turbo-decoders is usu-
+4 M-BCJR architecture can be easily reconfigured to support                    ally in the state-metric recursion units, since the associated
+2-to-3 times larger window lengths that will be required for                   recursive computations exacerbate pipelining. Corresponding
+optimal performance [16]. This mainly involves increasing the                  speed-optimized implementations achieve not more than tens
+capacity of the M-BCJR memories by a factor of 2-to-3, which                   of Mb/s, e.g., [12], [21], and hence, to meet the 326.4 Mb/s
+will lead to about 30% increase in the overall chip area.                      LTE peak data-rate, the decoding time per half-iteration must
+   3) Radix-4 recursion: The throughput of LTE turbo-                          therefore be reduced. A promising solution is to instantiate N
+decoders can be enhanced by radix-4 state-metric recur-                        M-BCJR units and to perform N -fold parallel decoding of
+sions [17]. This is illustrated in the RHS of Fig. 2 for the                   the trellis [22]. To this end, the trellis is divided into N trellis
+forward recursion1 where two trellis-steps are processed at a                  segments of equal2 length S and parallel SISO decoding is car-
+time, skipping odd-numbered steps. Specifically, the forward                   ried out in the assigned trellis-segment in parallel fashion. This
+state-metrics αk (s) are computed on the basis of its four                     approach roughly increases the turbo-decoding throughput by
+admissible predecessor states s000 , s001 , s002 , and s003 (at step k −2)     a factor of N compared to (non-parallel) turbo-decoders.3
+according to
+                                                                               A. High-Level Architecture
+αk (s) = max αk−2 (s00 ) + γk (s000 , s), αk−2 (s001 ) + γk (s001 , s),
+               
+                                                                                  The proposed architecture shown in Fig. 3 is based on the
+          αk−2 (s002 ) + γk (s002 , s), αk−2 (s003 ) + γk (s003 , s) .   (3)   (non-parallel) HSDPA turbo-decoder in [12]. SISO decoding
+The radix-4 branch-metrics required in (3) are computed                        is performed by alternating between non-interleaved and inter-
+according to                                                                   leaved phases which decode the first and second convolutional
+                                                                               code, respectively.
+               γk (s00i , s) = γk−1 (s00i , s0j ) + γk (s0j , s)         (4)      1) Overview: The architecture contains N max-log M-
+                                                                               BCJR instances, input memories for the storage of the sys-
+using the six branch-metrics associated with the trellis-steps k
+                                                                               tematic and parity LLRs, and one intermediate memory for the
+and k − 1 required in the radix-2 recursion (see Fig. 2).
+                                                                               storage of the extrinsic LLRs. The LTE interleaver consists of
+                                                                               an address-generator unit for the computation of all interleaved
+C. LTE Interleaver                                                             and non-interleaved addresses, and of dedicated permutation
+   Interleavers scramble data in a pseudo-random order to                      networks located at the input and intermediate memories. Each
+minimize the correlation of neighboring bits at the input                      M-BCJR instance processes one trellis-step per clock cycle
+of the convolutional encoders (see Fig. 1). Some (e.g., the                    for radix-2 and two steps when using radix-4 recursions. We
+one specified in HSDPA [2]) can present a challenge for                        note that the use of radix-4 recursions entails 2× increased
+on-the-fly address-computation and lead to rather complex                      memory-bandwidth, since the LLRs associated with even-
+circuits [12]. LTE, on the other hand, specifies the use of                    and odd-numbered trellis-steps are required per clock cycle.
+a quadratic polynomial permutation (QPP) interleaver [18],                       2 N S = K is guaranteed for all code-block lengths specified in LTE with
+[19] that allows efficient computation of interleaved addresses                N ∈ {1, 2, 4, 8}.
+                                                                                 3 The overhead caused by the dummy forward-recursions and by latencies
+  1 The radix-4 backward and dummy backward state-metric recursions are        present in the M-BCJR decoders prevents linear scaling of the throughput in
+carried out in a similar fashion.                                              the number of parallel SD instances N .
+4                                                                                               TO APPEAR IN IEEE JOURNAL OF SOLID-STATE CIRCUITS 2011
+
+
+
+
+                                    input RAM
+                                                    inter-
+                                    systematic     leaver
+                                      LLRs
+
+
+                       input data
+                                                                            1st                 2nd                               Nth
+                                                                          M-BCJR              M-BCJR                            M-BCJR
+                                    input RAM                             decoder             decoder                           decoder
+                                     parity-1
+                                      LLRs
+
+                                     parity-2
+                                                                            half-
+                                      LLRs
+                                                                         iteration                              intermediate
+                                                                                                inter-              RAM
+                                                                                               leaver
+                                     address                                                                extrinsic LLRs
+                                    generator
+                                                          output data
+
+Fig. 3.   High-level architecture of the proposed parallel turbo-decoder for LTE.
+
+
+
+To cope with this (potentially) high memory-bandwidth, the
+                                                                                                                                                         8
+following memory architecture is used.
+   2) Memory architecture: The instantiated input and inter-                                         number of parallel
+                                                                                                    component decoders
+mediate memories store up to 6144 LLRs in support of the                                                                                        ix-4
+maximum LTE code-block length. Each memory contains N                                                                                     rad          this
+                                                                                                                                    4                  work
+LLR-values per address (see Section IV for details). When
+performing radix-2 computations, the systematic, parity 1-and-
+                                                                                                            2                   8
+2, and extrinsic LLRs are stored in separate RAMs. Since                                                                   -2
+access to either the parity-1 or parity-2 LLRs is required (in                                      1              a   dix
+                                                                                            [12]             4 r
+the non-interleaved or interleaved phase), one single-port (SP)
+RAM storing both sets of parity LLRs is used to minimize                                                2      t ncy
+                                                                                                1
+                                                                                                          s tan ficie
+silicon area. The systematic RAM only requires SP-capability,                                            n f
+                                                                                                      co re-e                          3GPP-LTE
+whereas the intermediate memory requires two-port (TP) ca-
+                                                                                                        wa                          peak data-rate
+pability to provide the required memory bandwidth. The 2×                                            rd
+                                                                                                ha
+higher memory-bandwidth required by radix-4 recursions can
+be provided by instantiating two RAMs for the systematic                                                           Throughput [Mb/s]
+LLRs and two for the extrinsic LLRs, all providing half the
+amount of storage. One RAM instance is then used for the                            Fig. 4. Throughput/area tradeoffs for parallel radix-2 and radix-4 turbo-
+                                                                                    decoders for maximum clock frequency in 0.13µm CMOS technology.
+LLRs associated to the even-numbered and the other for the
+odd-numbered trellis-steps. This partitioning enables the 2×N
+LLRs to be read per clock cycle. Note that splitting of the
+parity RAM can be avoided by storing the two sets of LLRs                              Fig. 4 shows that the architectures employing radix-2 com-
+for k and k − 1 per address.                                                        putations achieve a throughput ranging from 28 Mb/s (N = 1)
+                                                                                    to 180 Mb/s (N = 8). Note that the HSDPA implementa-
+B. Implementation Tradeoffs                                                         tion [12] exhibits similar throughput and area as the N = 1
+   The key design parameters of the parallel turbo-decoder                          radix-2 LTE design. Since N = 8 is the maximum parallelism
+architecture in Fig. 3 are the number of parallel M-BCJR                            supported for decoding of all code-block lengths in LTE,
+instances N and the use of either radix-2 or radix-4 recursions.                    we switch from radix-2 to radix-4 to reach higher through-
+In order to determine the most efficient configuration that                         puts. The 326.4 Mb/s LTE peak data-rate (indicated by the
+meets the throughput requirements of LTE, we study the                              horizontal line in Fig. 4) can only be achieved for N = 8
+associated throughput/area tradeoffs in Fig. 4 for 0.13µm                           in combination with radix-4 computations and therefore, we
+CMOS technology.4                                                                   consider the use of this configuration in the remainder of the
+                                                                                    paper. We emphasize that these parameters additionally lead
+  4 The throughput is given for 5.5 full-iterations and a block-length of K =
+                                                                                    to best hardware-efficiency (in terms of throughput per area),
+3200. The area and throughput correspond to synthesis results that have been
+scaled to match with the measured area and throughput of the 8× parallel            which is due to the fact that the parallelization improves the
+radix-4 turbo-decoder ASIC presented in Section VI.                                 throughput almost linearly in N while only increasing the
+STUDER, BENKESER, BELFANTI, AND HUANG                                                                                                                                         5
+
+
+
+                                                                                                     1) Memory folding: As is illustrated in Fig. 5, the sequence
+         0   5 10 15 20 25 30 35                                                                  of K LLRs associated with one code-block is stored in a
+         1   6 11 16 21 26 31 36                              permutation                         folded-memory, which consists of S addresses, contains N
+
+
+
+                                          a,b,c,d,e,f,g,h                       b,g,h,e,f,c,d,a
+         2   7 12 17 22 27 32 37                                                                  LLR-values per address, and provides storage for K = N S
+         3   8 13 18 23 28 33 38                                address                           LLRs.5 The LLRs are written column-wise, such that the nth
+         :   :   :   :   :   :    :   :                         decoding                          trellis-segment corresponds to the nth column of the memory.
+         :   :   :   :   :   :    :   :
+                                                                                                  In the non-interleaved phase, N -fold parallel access to the
+                  folded                                    interleaved                           folded memory is straightforward. Starting from the folded-
+                 memory                                     addresses for eight                   memory address 0 in incrementing fashion, one reads out
+                                                            component decoders:                   all N LLR values residing at the current address and assigns
+                                                            6,31,36,21,26,11,16,1                 the LLR-value located at the nth column to the nth M-BCJR
+     folded-memory
+     address: 1                                                                                   instance for n = 1, . . . , N . This access scheme ensures that
+                                 address generator                                                each M-BCJR instance obtains the LLRs corresponding to its
+                                                                                                  assigned trellis-segment in the right order.
+                                                                                                     2) Interleaving: In the interleaved phase, each M-BCJR
+                                                                                                  instance is associated with an address-generator computing the
+Fig. 5. Architectural principle of the contention-free interleaver for N = 8
+and S = 5. Address-decoding generates the sorting-order that is required to
+                                                                                                  corresponding interleaved address. Since the LTE interleaver
+assign the LLRs from the folded memory to the corresponding SISO decoders.                        is maximally-vectorizable, the N interleaved addresses always
+                                                                                                  point at the same row in the folded memory. The address
+                                                                                                  for the folded memory is immediately given by the smallest
+area associated with the M-BCJR instances (and interleaver-                                       address among the N interleaved addresses. The assignment
+related circuitry) but not the area of the rather large (input and                                of the N LLR-values to the M-BCJR instances is more in-
+intermediate) memories. Hence, increasing the parallelism N                                       volved and is performed in two stages. First, address-decoding
+reduces the (detrimental) influence of the memories to the                                        extracts the sorting-order that is required to assign the N
+overall hardware-efficiency.                                                                      LLRs of the folded memory to the N M-BCJR instances
+   We finally note that the general throughput/area tradeoffs                                     in the right order. Second, a permutation according to the
+remain valid for other technology nodes. However, if a more                                       extracted sorting-order is applied to the N LLR values, which
+advanced technology node is used, less parallelism would be                                       are then passed to the corresponding M-BCJR instances. This
+necessary or radix-2 recursions might be sufficient to meet the                                   concept enables N × parallel and interleaved access to the
+LTE peak data-rate.                                                                               folded memory while avoiding access-contentions.
+
+    IV. A LLEVIATING THE I NTERLEAVER B OTTLENECK                                                 B. Master-Slave Batcher Network
+   Providing interleaved memory access at the high band-                                             On-the-fly address-generation for the LTE interleaver is—
+width required by eight parallel radix-4 M-BCJR units is a                                        thanks to the recursion (6)—not hardware-critical. However,
+challenging task. For most interleavers, e.g., the one speci-                                     interleaved memory-access additionally requires i) the permu-
+fied in HSDPA [2], parallel and interleaved memory access                                         tation signals that enable the network to reverse the interleaved
+leads to an interleaver bottleneck which is caused by access-                                     order of the N addresses to its original order to be worked
+contentions, eventually resulting in rather inefficient imple-                                    out and ii) the LLRs to be assigned to the corresponding M-
+mentations (see [23] for details). In the ensuing discussion,                                     BCJR unit. Both tasks are critical from a hardware-perspective,
+we propose an architecture solution for LTE that alleviates the                                   since complex address-decoding logic and signal routing for
+interleaver bottleneck arising from parallel turbo-decoding.                                      the distribution of the LLRs to the M-BCJR units are in-
+                                                                                                  volved. Multiplexers (MUXs), for example, offer an obvious
+A. Contention-Free Interleaving for LTE                                                           solution for the permutation in hardware, but require rather
+                                                                                                  complex address-decoding circuits and cause large fan-out and
+   The LTE interleaver exhibits two properties that allow for                                     wiring overhead for N > 4 with N MUXs each having N
+bandwidth-efficient access to the memories in interleaved and                                     inputs. In addition, achieving high throughput with pipelining
+natural order. First, the interleaver is contention-free [24],                                    is rather inefficient, because many flip-flops are required to
+which ensures that—if N divides all code-block lengths K                                          cover all paths. We next propose an efficient solution that can
+without remainder, i.e., for N ∈ {1, 2, 4, 8}—the LLR-                                            be used not only for the LTE interleaver, but also for arbitrary
+values required by the N SDs can always (in interleaved as                                        contention-free interleavers that are maximally-vectorizable.
+well as non-interleaved decoding phases) be read out of N                                            1) General idea: The proposed architecture implements the
+different memories. Second, the interleaver is maximally-                                         two-step approach outlined in Section IV-A2. The first step
+vectorizable [19], which implies that the address-distance be-                                    performs address-decoding, which amounts to sorting of the N
+tween each of the N interleaved addresses is always an integer                                    interleaved addresses in ascending order and extracting the
+multiple of the trellis-segment length S. We next describe a
+general architecture solution that exploits both properties to                                       5 In our radix-4 implementation, even- and odd-numbered systematic and ex-
+avoid the interleaver bottleneck.                                                                 trinsic LLRs are stored in separate RAMs with S/2 addresses (cf. Section III).
+6                                                                                                                       TO APPEAR IN IEEE JOURNAL OF SOLID-STATE CIRCUITS 2011
+
+
+
+    output                                     slave network                                       input   we use a second network having the same interconnections as
+    b                                                                                                 a    the master network and consisting of 2-input switches (SW)
+                           SW        SW         SW
+    g                                                                                                 b    instead of sorters. The permutation signals generated in the
+                                                                                           SW
+                                                                                                           master network control the switches in the slave network. In
+    h                                                                                                 c
+                           SW        SW         SW           SW                   SW                       order for the slave network to implement the inverse sorting-
+    e                                                                                                 d    order, the LLRs are fed into the slave network from the op-
+                                                                                           SW
+    f                                                                                                 e    posite direction.6
+                           SW        SW         SW           SW                   SW
+    c                                                                                                 f       3) Properties: The proposed master-slave (MS) Batcher net-
+    d                                                                                      SW         g    work offers an area-efficient way to perform address-decoding
+                           SW        SW         SW                                                         and permutation in hardware and accommodates pipelining
+    a                                                                                                 h
+                                                                                                           with little hardware resources, which is essential to achiev-
+                                       permutation signals                                                 ing high-throughput interleaving. In addition, the architectural
+                                                                                                           concept enables the use of asymptotically optimal sorting net-
+     6                                                                                              1      works for an arbitrary number of inputs N .7 Consequently,
+                           SO        SO         SO
+    31                                                                                      SO      6      our solution allows for the economic implementation of inter-
+    36                                                                                                     leavers for highly-parallel turbo-decoders. Note that another
+                           SO        SO         SO            SO                  SO
+                                                                                                   11      efficient permutation network, applicable to QPP interleavers
+    21                                                                                             16
+                                                                                            SO             only, has been proposed in [7].
+    26                                                                                             21
+                           SO        SO         SO            SO                  SO
+    11                                                                                             26            V. R ADIX -4 M AX -L OG M-BCJR A RCHITECTURE
+    16                                                                                      SO     31         Pipelining applied to the MS Batcher network removes the
+                           SO        SO         SO
+     1                                                                                             36      critical path from the interleaver. Hence, the maximum clock
+                                                                                            no outputs
+    input                                  master network                                   generated      frequency of the turbo-decoder will be determined by the crit-
+                                                                                                           ical path of the M-BCJR architecture. In addition, the eight
+                                    (a) MS Batcher network for N = 8.
+                                                                                                           M-BCJR instances will carry out almost all computations and
+                                                                                                           hence, dominate the circuit area and power consumption of the
+                          permutation signal
+
+
+
+
+    2-input sorter (SO)                                 2-input switch (SW)
+                                                                                                           whole turbo-decoder. Therefore, to meet the LTE peak data-
+                                                                                                           rate while remaining area- and power-efficient, optimization
+                                                                                                           of the M-BCJR units is of paramount importance.
+                                >
+                                                                                                           A. VLSI Architecture
+                                                                                                              The radix-2 M-BCJR unit of [12] forms the basis of the
+                                                                              permutation signal           radix-4 architecture depicted in Fig. 7. We implemented radix-
+                                                                                                           4 computations and applied further optimizations to improve
+                           (b) 2-input sorter (SO) and 2-input switch (SW) units.                          throughput and hardware-efficiency. The computation of two
+                                                                                                           trellis-steps is performed per clock cycle using three paral-
+Fig. 6.     Address-decoding and permutation for maximally-vectorizable                                    lel state-metric recursion units. These units implement the
+contention-free interleavers based on the proposed master-slave (MS) Batcher
+network.                                                                                                   forward, backward, and dummy backward state-metric recur-
+                                                                                                           sions, and contain one radix-4 ACS circuit for each of the
+                                                                                                           eight trellis-states. This processing scheme allows the radix-4
+                                                                                                           M-BCJR unit to compute two LLR values (associated with an
+corresponding sorting-order. The second step realizes the per-
+                                                                                                           even- and odd-numbered trellis-step) per clock cycle, so that
+mutation, which is obtained through sorting of the N LLRs
+                                                                                                           each M = 30 trellis-step window is computed sequentially in
+using the inverse sorting-order. The inverse sorting-order pro-
+                                                                                                           15 clock cycles.
+vides the permutation that generates the sequence of inter-
+                                                                                                              In order to reduce storage requirements, the branch-metric
+leaved addresses from the sorted address-sequence. Finally,
+                                                                                                           preprocessing unit computes LA           s
+                                                                                                                                              k + Lk (for k and k − 1)
+the nth output of the permutation stage is assigned to the nth
+                                                                                                           and stores this intermediate result together with the corre-
+M-BCJR unit for n = 1, . . . , N .
+                                                                                                           sponding Lkp1,p2 in one of the three γ-memories [12]. The
+   2) Architecture: Our architecture, which is based on two                                                γ-memories are realized by arrays of latches (requiring ap-
+Batcher sorting networks [25], is shown in Fig. 6. Address-                                                proximately the same area compared to SRAM macrocells) to
+decoding is carried out in the master network consisting of a                                              simplify placing of the eight M-BCJR units during the back-
+small number of 2-input sorter (SO) units to perform sorting                                               end design. The radix-4 branch-metric computation units first
+of the interleaved addresses in ascending order. As depicted in
+                                                                                                              6 In [1], the slave Batcher Network was implemented incorrectly, so that
+Fig. 6(b), each 2-input sorter generates a permutation signal
+                                                                                                           only a subset of code-block lengths specified in`LTE can be´ decoded.
+indicating whether the inputs have been swapped or not. The                                                   7 The number of required sorters scales with O N log(N ) and the depth of
+slave network performs the permutation by applying the in-                                                                                                                      `       ´
+                                                                                                           such networks (i.e., the number of sorters in the critical path) is O log(N ) ,
+verse sorting-order to the N LLRs (see Fig. 6(a)). To this end,                                            e.g., [26].
+STUDER, BENKESER, BELFANTI, AND HUANG                                                                                                                       7
+
+
+
+   branch-metric
+                                                                                       shows corresponding radix-2 and radix-4 ACS architectures.
+   preprocessing                                                                       The critical path of the presented (parallel) radix-4 ACS unit is
+ input                                                                                 optimized for throughput. Here, the selection signal is carried
+ data                                                                                  out by six parallel comparators followed by a look-up table
+                   -memory       -memory         -memory
+                                                                                       (LUT). This architecture shortens the critical path-delay by
+    radix-4                                                                            about 50% compared to a tree-like radix-4 ACS implemen-
+ branch-metric                                           8x radix-4
+  computation                                            ACS units                     tation. We finally note that radix-4 recursions require one bit
+                                                                                       more for the state-metrics (as for radix-2) to ensure proper
+   forward                      backward                    dummy                      functioning of modulo-normalization, which is due to the fact
+   state-metric-                state-metric-               state-metric-
+   recursion unit     G         recursion unit   G          recursion unit   G         that the radix-4 branch-metrics (4) have 2× larger dynamic
+   init                                                     init                       range.
+                 radix-4                    radix-4                      radix-4          Our implementation results have shown that radix-4 M-
+                  ACS                        ACS                          ACS          BCJR units achieve approximately 40% higher throughput
+                   unit                       unit                         unit        (at 0.7× lower clock frequency) while being only 15% less
+                                                                                       hardware-efficient (in terms of Mb/s per area) compared
+                                                                                       to radix-2-based designs. We therefore conclude the use of
+                          reuse of inter-                                     output   radix-4 is essential for turbo-decoders aiming at maximum
+                          mediate values              extrinsic/intrinsic      data
+          -memory                                                                      throughput and considerably relax the corresponding design
+                                                      LLR computation
+                                                                                       constraints due to the reduced clock frequency.
+
+Fig. 7.     Architecture of the implemented radix-4 max-log M-BCJR core.               C. LLR Computation Unit
+                                                                                          The LLR computation unit shown in Fig. 7 computes the
+             radix-2 ACS                         parallel radix-4 ACS                  intrinsic and extrinsic LLRs for the trellis-steps k − 1 and k
+             +                                                     CMP                 in each clock cycle. Since radix-4 computations only obtain
+                                                 +                           LUT       the state- and branch-metrics associated with even trellis-steps
+                   CMP
+                                                                   CMP                 k = 2k 0 , computation of the (intermediate) state- and branch-
+             +                                                                         metrics associated with the odd trellis-steps k = 2k 0 + 1 is
+                                                 +
+                                                                   CMP                 required. These values can be derived from the state-metrics
+                                                                                       αk−2 (s) stored in the α-memory, from the intermediate results
+   comparison circuit for
+   modulo-normalization                                            CMP                 of the backward state-metric recursion γk (s00i , s) + βk (s), and
+                                                 +
+                                                                                       from the (radix-2) branch metrics γk (s0i , s) and γk−1 (s00j , s0i ).
+     MSB-1..0      MSB
+                                                                   CMP                 LLR computation first works out the forward αk−1 (s) and
+               >                                                                       backward βk−1 (s) state-metrics associated with the odd trellis-
+                                                 +
+    MSB-1..0       MSB
+                                                                   CMP                 step k − 1 and then—with the aid of the radix-2 branch-
+                                                                                       metrics—calculates the intrinsic LLRs (2). Computation of (2)
+                                                                                       is realized using two maximization trees, which have been
+Fig. 8. Radix-2 (left) and radix-4 (right) ACS architectures based on modulo-
+normalization.                                                                         pipelined to ensure that the critical path of the M-BCJR block
+                                                                                       is in one of the three state-metric recursion units.
+
+work out the radix-2 branch-metrics and then calculate the                                 VI. I MPLEMENTATION R ESULTS AND C OMPARISON
+radix-4 branch metrics (4). The forward state-metric recursion                            In this section, we summarize the key characteristics of the
+unit starts with a dummy recursion for one window to obtain                            8× parallel LTE turbo-decoder designed in this paper and
+initial forward state-metrics and then, computes the αk (s) for                        compare our ASIC implementation results to that of other
+each window, which are cached within the α-memory (realized                            turbo-decoder implementations.
+using latches only). The backward state-metric recursion unit
+computes the βk (s) for each window. The initial backward                              A. Error-Rate Performance
+state-metrics required at the beginning of each window are
+generated by the dummy state-metric recursion unit. The                                   To achieve near-optimal error-rate performance, the input
+cached forward state-metrics, the intermediate results obtained                        LLRs are quantized to 5 bit, the extrinsic LLRs to 6 bit, all
+in the backward recursion, and the radix-2 branch-metrics are                          state-metrics in the radix-4 ACS units require 10 bit, and ex-
+finally used to compute the intrinsic LLRs (2).                                        trinsic scaling with a hardware-friendly constant of 0.6875
+                                                                                       was used. Fig. 9 shows the resulting bit error-rate (BER) of
+                                                                                       the hardware implementation and provides a comparison to
+B. Radix-4 ACS Units with Modulo-Normalization                                         the ideal turbo-decoding algorithm (i.e., employing floating-
+  To arrive at a short critical path in the ACS units, (ex-                            point arithmetics and using the BCJR algorithm) at 5.5 full-
+pensive) re-normalization circuitry is avoided by employing                            iterations. One can observe that the use of extrinsic scaling
+modulo-normalization [27], [28], which only requires minor                             leads to a 0.2 dB improvement compared to the standard max-
+modifications of the comparison circuit involved [12]. Fig. 8                          log M-BCJR algorithm and the final implementation loss is
+8                                                                                                    TO APPEAR IN IEEE JOURNAL OF SOLID-STATE CIRCUITS 2011
+
+
+                                                                                                                    TABLE II
+                                               Ideal turbo-decoding algorithm (I=5.5)            P OWER CONSUMPTION WITH SUPPLY- VOLTAGE SCALING
+                                               Hardware implementation (I=5.5)
+                                               Max-log-MAP turbo decoder (I=5.5)          Throughput         Supply       Leakage        Power        Energy eff.
+                                                                                            [Mb/s]       voltage [Vdd ]   current     consumption     [nJ/bit/iter.]
+                                                                                             326.4           1.06 V       0.98 mA       503 mW            0.28
+                                                                                             100.0           0.71 V       0.56 mA       68.6 mW           0.13
+
+
+                                                                         impact of
+                                                                          extrinsic     margin). The power consumption (measured at maximum
+                                                                          scaling       throughput) is 788.9 mW, leading to an energy-efficiency of
+                implementation
+                  loss: 0.14dB                                                          0.37 nJ/bit/iteration.8 Note that only [5] reports a slightly better
+                                                                                        energy-efficiency at less than half the throughput and about 5×
+                                                                                        larger silicon area.
+                                                                                           Table II shows the power consumption required for the
+                                                                                        326.4 Mb/s LTE peak data-rate and the more realistic 100 Mb/s
+                                                                                        throughput targeted by industry today. The supply voltage was
+Fig. 9.    BER performance in AWGN channel for code-block length 3200.
+                                                                                        scaled to meet the specified throughputs, leading to 503 mW
+                                                                                        for the LTE peak data-rate and only 68.6 mW for the 100 Mb/s
+                                                                                        milestone. A comparison of the 0.13 nJ/bit/iteration energy-
+                                                                                        efficiency with other turbo-decoders in Table I highlights the
+                                                                                        effectiveness of our implementation concept.
+                   systematic              parity 1 and 2 memory
+                   memories
+
+                                         BCJR 4                                                                  VII. C ONCLUSIONS
+                      address-
+                                                                                           In this paper, we detailed the design of a parallel
+                   generators and     BCJR 1       BCJR 8                               turbo-decoder for the 3GPP-LTE standard. The analysis of
+                                                            BCJR 5                      the throughput/area tradeoffs associated with parallel turbo-
+                   Batcher networks
+                                                                      BCJR 6
+                                                                                        decoders have shown that radix-4 in combination with eight
+                                      BCJR 7                                            M-BCJR instances are necessary for the LTE peak data-
+                                                BCJR 2                                  rate in 0.13 µm CMOS technology. Parallel and interleaved
+                                                             BCJR 3                     access to the memories at high throughput was achieved
+                          extrinsic
+                          memories                                                      through the development of a master-slave Batcher network.
+                                                                                        Optimizations in the radix-4 M-BCJR unit finally led to a
+                                                                                        high-performance and low-area turbo-decoder architecture. In
+                                                                                        addition to setting a record in turbo-decoding throughput, both
+Fig. 10.    Turbo-decoder ASIC micrograph with highlighted units.                       ultra low-power and cost-effectiveness have been demonstrated
+                                                                                        by the presented implementation concept.
+
+smaller than 0.14 dB (in terms of Eb /N0 ) compared to that                                                           R EFERENCES
+achieved by the ideal turbo-decoding algorithm.
+                                                                                         [1] C. Studer, C. Benkeser, S. Belfanti, and Q. Huang, “A 390Mb/s 3.57mm2
+                                                                                             3GPP-LTE turbo decoder ASIC in 0.13µm CMOS,” in IEEE ISSCC dig.
+B. Key Characteristics and Comparison                                                        tech. papers, vol. 1, San Francisco, CA, USA, Feb. 2010, pp. 274–275.
+                                                                                         [2] 3rd Generation Partnership Project; Technical Specification Group
+   Table I summarizes the key characteristics of the imple-                                  Radio Access Network; Channel Coding and Multiplexing Examples,
+mented turbo-decoder prototype [1] in 0.13 µm (1P/8M) CMOS                                   3GPP Organizational Partners TS 25.944, Rev. 4.1.0, Jun. 2001.
+technology. The corresponding ASIC micrograph is shown in                                [3] 3rd Generation Partnership Project; Technical Specification Group
+                                                                                             Radio Access Network; Evolved Universal Terrestrial Radio Access (E-
+Fig. 10. About 2/3 of the area is occupied by the eight radix-4                              UTRA); Multiplexing and channel coding (Release 9), 3GPP Organiza-
+max-log M-BCJR instances, which confirms that optimization                                   tional Partners TS 36.212, Rev. 8.3.0, May 2008.
+of the M-BCJR unit is of paramount importance during the                                 [4] 3GPP TR25.912 V8.0.0, “Feasibility study for evolved universal terres-
+                                                                                             trial radio access (UTRA) and universal terrestrial radio access network
+design of a parallel turbo-decoder.                                                          (UTRAN),” Feb. 2009.
+   Normalized hardware efficiency (in Mb/s/mm2 ) of our ASIC                             [5] C.-C. Wong, M.-W. Lai, C.-C. Lin, H.-C. Chang, and C.-Y. Lee, “Turbo
+prototype is best in class. The active area of the chip is                                   decoder using contention-free interleaver and parallel architecture,”
+                                                                                             IEEE JSSC, vol. 45, no. 2, pp. 422–432, Feb. 2010.
+3.57 mm2 , comprises 553 kGE (excluding the memories), and                               [6] J.-H. Kim and I.-C. Park, “A unified parallel radix-4 turbo decoder for
+uses 129 kb of RAM. The maximum measured clock frequency                                     mobile WiMAX and 3GPP-LTE,” in Proc. CICC, San Jose, CA, USA,
+is 302 MHz, at which a throughput of 390.6 Mb/s at 5.5                                       Sept. 2009, pp. 487–490.
+iterations has been measured. Our ASIC prototype is therefore   8 All power measurements are performed at T = 300 K for a code-block
+the first reported in the open literature that achieves the length K = 3200 and 5.5 full-iterations using typical stimuli generated at
+theoretical 326.4 Mb/s LTE peak data-rate (with a 20% safety- Eb /N0 = 0.6 dB.
+STUDER, BENKESER, BELFANTI, AND HUANG                                                                                                                          9
+
+
+                                                                TABLE I
+                              K EY CHARACTERISTICS AND COMPARISON TO OTHER MEASURED TURBO - DECODER ASIC S
+
+                                                               Wong       Kim and Park          Wong        Benkeser      Bickerstaff
+                   Publication                   This work
+                                                             et al. [5]       [6]             et al. [7]    et al. [12]   et al. [21]
+                   Standard                        LTE          —         LTE / WiMAX           LTE          HSDPA         HSDPA
+                   Radix/parallel decoders          4/8        2/16              4/8             2/8           2/1            4/1
+                   CMOS technology [nm]            130         130               130             90            130            180
+                   Supply voltage [V]               1.2        1.32              1.2             1.0           1.2            1.8
+                   Gate count                      553 k     2.67a M            800a k           —            44.1 k         410 k
+                   Memory [kb]                     129          —                —               —             122            410
+                   Active area [mm2 ]              3.57       17.81             10.7         2.1 (4.3b )       1.2        14.5 (7.3b )
+                   Maximum throughput                                                           188c                         26.2c
+                                                   390.6       233c             271c                           20.3
+                   at 5.5 iterations [Mb/s]                                                    (133bc )                     (37bc )
+                   Normalized hardware-
+                                                   109.4       13.1             25.3            30.9          16.9           5.07
+                   efficiencyb [Mb/s/mm2 ]
+                   Leakage current [mA]            1.23d        —                —               —             1.73           —
+                   Power consumption              788.9d       275                           219 (619b )      57.8        956 (338b )
+                                                                                 —
+                   in [mW] at [Mb/s]             at 390.6     at 160                           at 129        at 10.8        at 10.8
+                   Normalized energy
+                                                   0.37d       0.22             0.61            0.59           0.7            3.9
+                   efficiencybc [nJ/bit/iter.]
+
+  a Including the gate count of the memories.
+  b Technology scaling to 0.13 µm CMOS assuming: A ∼ 1/s2 , t                        3
+                                                             pd ∼ 1/s, and Pdyn ∼ 1/s .
+  c Throughput linearly scaled to 5.5 iterations.
+  d Measured at V
+                 dd = 1.2 V and T = 300 K.
+
+
+
+
+ [7] C.-C. Wong and H.-C. C. Y.-Yu Lee, “A 188-size 2.1mm2 reconfigurable              optical channel: Serially concatenated pulse-position modulation,” IPN
+     turbo decoder chip with parallel architecture for 3GPP LTE system,” in            Progess Report 41-161, pp. 1–25, May 2005.
+     Symp. VLSI circuits dig. tech. papers, Kyoto, Japan, June 2009, pp.          [21] M. Bickerstaff, L. Davis, C. Thomas, D. Garrett, and C. Nicol, “A
+     288–289.                                                                          24Mb/s radix-4 logMAP turbo decoder for 3GPP-HSDPA mobile wire-
+ [8] C. Berrou and A. Glavieux, “Near optimum error correcting coding and              less,” in IEEE ISSCC dig. tech. papers, vol. 1, San Francisco, CA, USA,
+     decoding: turbo-codes,” IEEE Trans. Comm., vol. 44, no. 10, pp. 1261–             Feb. 2003, pp. 150–484.
+     1271, Oct. 1996.                                                             [22] R. Dobkin, M. Peleg, and R. Ginosar, “Parallel VLSI architecture for
+ [9] L. Bahl, J. Cocke, F. Jelinek, and J. Raviv, “Optimal decoding of linear          MAP turbo decoder,” in Proc. IEEE Int. Symp. PIMRC, vol. 1, Sept.
+     codes for minimizing symbol error rate,” IEEE Trans. Inf. Th., vol. 20,           2002, pp. 384–388.
+     no. 2, pp. 284–287, Mar. 1974.                                               [23] C. Benkeser, “Power efficiency and the mapping of communication
+[10] A. J. Viterbi, “Error bounds for convolutional codes and an asymptoti-            algorithms into VLSI,” Ph.D. dissertation, ETH Zürich, Switzerland,
+     cally optimum decoding algorithm,” IEEE Trans. Inf. Th., vol. 13, no. 2,          Series in Microelectronics, vol. 209, Hartung-Gorre Verlag Konstanz,
+     pp. 260–269, Apr. 1967.                                                           2010.
+[11] J. P. Woodard and L. Hanzo, “Comparative study of turbo decoding             [24] O. Y. Takeshita, “On maximum contention-free interleavers and permu-
+     techniques: an overview,” IEEE Trans. Vehicular Tech., vol. 49, no. 6,            tation polynomials over integer rings,” IEEE Trans. Inf. Th., vol. 52,
+     pp. 2208–2233, Nov. 2000.                                                         no. 3, pp. 1249–1253, Mar. 2006.
+[12] C. Benkeser, A. Burg, T. Cupaiuolo, and Q. Huang, “Design and                [25] K. E. Batcher, “Sorting networks and their applications,” in Proc. of 32th
+     optimization of an HSDPA turbo decoder ASIC,” IEEE JSSC, vol. 44,                 AFIPS Spring Joint Computer Conf., Atlantic City, NJ, USA, 1968, pp.
+     no. 1, pp. 98–106, Jan. 2008.                                                     307–314.
+[13] V. Franz and J. B. Anderson, “Concatenated decoding with a reduced-          [26] M. Ajtai, J. Komlós, and E. Szemerédi, “An O(n log n) sorting net-
+     search BCJR algorithm,” IEEE J. Sel. Areas in Comm., vol. 16, no. 2,              work,” Ann. ACS Symp. Theory of Comp., pp. 1–9, 1983.
+     pp. 186–195, Feb. 1998.                                                      [27] A. P. Hekstra, “An alternative to metric rescaling in Viterbi decoders,”
+[14] M. van Dijk, A. J. E. M. Janssen, and A. G. C. Koppelaar, “Correcting             IEEE Trans. Comm., vol. 37, no. 11, pp. 1220–1222, Nov. 1989.
+     systematic mismatches in computed log-likelihood ratios,” Europ. Trans.      [28] C. B. Shung, P. H. Siegel, G. Ungerboeck, and H. K. Thapar, “VLSI
+     Telecomm., vol. 14, no. 3, pp. 227–244, Jul. 2003.                                architectures for metric normalization in the Viterbi algorithm,” in Proc.
+[15] J. Vogt and A. Finger, “Improving the max-log-MAP turbo decoder,”                 IEEE ICC, vol. 4, Atlanta, GA, USA, Apr. 1990, pp. 1723–1728.
+     Elec. Letters, vol. 36, no. 23, pp. 1937–1939, Nov. 2000.
+[16] M. May, T. Ilnseher, N. Wehn, and W. Raab, “A 150MBit/s 3GPP LTE
+     turbo code decoder,” in Proc. DATE, Dresden, Germany, Mar. 2010.
+[17] G. Fettweiss and H. Meyr, “Parallel Viterbi algorithm implementation:
+     breaking the ACS-bottleneck,” IEEE Trans. Comm., vol. 37, no. 8, pp.
+     785–790, Aug. 1989.
+[18] J. Sun and O. Y. Takeshita, “Interleavers for turbo codes using permu-
+     tation polynomials over integer rings,” IEEE Trans. Inf. Th., vol. 51,
+     no. 1, pp. 101–119, Jan. 2005.
+[19] A. Nimbalker, Y. Blankenship, B. Classon, and T. K. Blankenship, “ARP
+     and QPP interleavers for LTE turbo coding,” in Proc. IEEE WCNC, Las
+     Vegas, NV, USA, Mar. 2008, pp. 1032–1037.
+[20] B. Moision and J. Hamkins, “Coded modulation for the deep-space
+

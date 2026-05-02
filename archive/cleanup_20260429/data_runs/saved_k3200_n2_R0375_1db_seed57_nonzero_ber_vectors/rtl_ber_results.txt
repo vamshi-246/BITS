@@ -1,0 +1,18 @@
+RTL Testbench BER Results
+=========================
+K: 3200
+NUM_SISO: 2
+Segment length: 1600
+QPP f1/f2: 111/240
+Eb/N0 dB: 1.000
+Channel/code rate: 0.375000
+Seed: 57
+Tail trellis steps: 3
+Paper boundary mode: 1
+Half iterations: 11
+Channel hard BER: 544/3200 = 0.170000000000
+Quantized systematic BER: 544/3200 = 0.170000000000
+BER signal: final intrinsic L_D hard decision
+Errors: 1
+Bits: 3200
+BER: 0.000312500000

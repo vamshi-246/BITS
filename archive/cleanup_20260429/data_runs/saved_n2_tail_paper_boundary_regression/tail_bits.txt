@@ -1,0 +1,8 @@
+# Encoder 1 tail: sys, par pairs
+enc1_tail_0: sys=1 par=1
+enc1_tail_1: sys=0 par=0
+enc1_tail_2: sys=0 par=0
+# Encoder 2 tail: sys, par pairs
+enc2_tail_0: sys=1 par=0
+enc2_tail_1: sys=1 par=1
+enc2_tail_2: sys=0 par=0
