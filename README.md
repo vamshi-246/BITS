@@ -502,9 +502,7 @@ This project demonstrates a complete, verified implementation of a parallel radi
 1. C. Studer, C. Benkeser, S. Belfanti, and Q. Huang, "Design and Implementation of a Parallel Turbo-Decoder ASIC for 3GPP-LTE," *IEEE Journal of Solid-State Circuits (JSSC)*, vol. 46, no. 1, pp. 8–17, Jan. 2011.
 2. 3GPP TS 36.212, "Multiplexing and Channel Coding," LTE standard specification.
 
----
-
-## Manual Edits Needed
+<!-- ## Manual Edits Needed
 
 > Items below may require your manual input to finalize the README:
 
@@ -516,4 +514,4 @@ This project demonstrates a complete, verified implementation of a parallel radi
 - [ ] **Update Monte Carlo BER results**: Current results use a small number of frames (5–10). If you run longer sweeps, update the BER table
 - [ ] **Add demo video/GIF**: A short recording of the Zybo board running the decoder (LEDs showing decode progress) would strengthen the hardware validation narrative
 - [ ] **LinkedIn / portfolio link**: Add a link to your portfolio or LinkedIn if you want recruiters to contact you
-- [ ] **License**: Consider adding an open-source license (MIT, Apache 2.0) if you want the project to be reusable
+- [ ] **License**: Consider adding an open-source license (MIT, Apache 2.0) if you want the project to be reusable -->
