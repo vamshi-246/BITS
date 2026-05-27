@@ -22,7 +22,7 @@ Mandi, India \\
 \maketitle
 
 \begin{abstract}
-The increasing demand for high data rates in wireless communications, particularly in 3GPP-LTE Advanced systems, necessitates high-throughput baseband processing. The iterative nature of turbo decoding inherently poses a significant bottleneck to achieving peak system throughput. This paper details the hardware design and FPGA implementation of a parallel radix-4 Max-Log-MAP turbo decoder architecture. The proposed design reproduces a highly parallel M-BCJR architecture targeting the Zynq-7010 FPGA device, focusing on resolving architectural challenges such as memory contention, sliding window synchronization, and iterative latency. Through rigorous architectural mapping, including modulo-normalized Add-Compare-Select (ACS) units, contention-free interleaver addressing, and double-buffered internal memories, the decoder achieves significant throughput. Implementation results demonstrate successful mapping to the target FPGA with a critical path delay of 24.89 ns, enabling a maximum clock frequency of 40.17 MHz. The design consumes approximately 79.5\% of the available LUTs and 56.6\% of BRAM resources on the Zynq-7010, establishing a robust baseline for further hardware optimization.
+The increasing demand for high data rates in wireless communications, particularly in 3GPP-LTE Advanced systems, necessitates high-throughput baseband processing. The iterative nature of turbo decoding inherently poses a significant bottleneck to achieving peak system throughput. This paper details the hardware design and FPGA implementation of a parallel radix-4 Max-Log-MAP turbo decoder architecture. The proposed design reproduces a highly parallel M-BCJR architecture targeting the Zynq-7010 FPGA device, focusing on resolving architectural challenges such as memory contention, sliding window synchronization, and iterative latency. Through rigorous architectural mapping, including modulo-normalized Add-Compare-Select (ACS) units, contention-free interleaver addressing, and double-buffered internal memories, the decoder achieves significant throughput. Implementation results demonstrate mapping to the target FPGA at a 100 MHz clock constraint with timing closure. The design consumes approximately 79.5\% of the available LUTs and 56.6\% of BRAM resources on the Zynq-7010, establishing a robust baseline for further hardware optimization.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -77,9 +77,9 @@ Each parallel SISO core implements a radix-4 Max-Log-MAP decoder processing 2 tr
 The radix-4 Add-Compare-Select (ACS) unit is the arithmetic core. Instead of standard normalization which requires subtracting the minimum metric across all states, \textbf{modulo-normalization} is employed. By expanding the state metric precision to 10 bits and utilizing two's complement arithmetic, relative metric differences are correctly maintained under overflow conditions. Furthermore, the ACS logic natively flattens the evaluation by analyzing all six pairwise differences of the four candidate state metrics simultaneously. By examining the sign bits of these modulo-differences, the result vector directly indexes a 24-entry, 6-bit combinatorial Look-Up Table (LUT), resolving the 4-way classification cleanly without invoking cascaded binary tree comparators.
 
 \begin{figure}[htbp]
-\centerline{\includegraphics[width=\linewidth]{acs_units.png}}
-\caption{Detailed architectural datapath of the Radix-4 Add-Compare-Select (ACS) calculation block.}
-\label{fig:acs_units}
+\centerline{\includegraphics[width=\linewidth]{radix4.png}}
+\caption{Radix-4 ACS computation structure with modulo comparator and LUT-based selection.}
+\label{fig:radix_acs}
 \end{figure}
 
 \subsection{Memory Organization}
@@ -102,21 +102,42 @@ To surpass the boundaries of standard reference designs and tailor the implement
     \item \textbf{Parallelism Over Iterative Decomposition in Networking:} Standard concurrent implementations invoke massive $O(N \log^2 N)$ master-slave Batcher sorting networks to prevent interleaving memory multiplex collision at large $N$ blocks. By deliberately prioritizing raw parallelism and strictly anchoring $N=2$, the design dismisses dense iterative decompositions. Consequently, the conventionally exhaustive master-slave routing fabric natively collapses into a vastly simplified 2-element bipartite crossbar. This directly circumvents combinatorial routing hazards and frees crucial slice utilization properties.
 
 \begin{figure}[htbp]
-\centerline{\includegraphics[width=\linewidth]{sorter_and_switch.png}}
-\caption{Routing datapath demonstrating the simplified sorting network utilized between parallel functional iterations.}
-\label{fig:sorter_switch}
+\centerline{\includegraphics[width=\linewidth]{master_slave.png}}
+\caption{Master-slave permutation network used for folded interleaved memory routing.}
+\label{fig:master_slave}
 \end{figure}
 
     \item \textbf{ROM/LUT QPP Interleaver Replacement:} Recursive algebraic processing of the comprehensive LTE interleaver polynomials poses severe combinational latencies when mapped strictly to structural DSP modules. The proposed architecture entirely substitutes recursive algorithmic configurations with direct chronological ROM/LUT look-up tables. By transferring the static polynomial properties of an explicit length constraint directly into fast distributed dual-port block RAM templates, identical concurrent cycle delivery is efficiently guaranteed decoupled from any arithmetic delay ceilings.
 \end{itemize}
 
-\section{FPGA Implementation}
-The hardware description was captured using Verilog-2001 and mapped to the Xilinx Zynq-7010 (xc7z010clg400-1) target using the Vivado 2024.1 design suite. The RTL was structurally divided to allow hierarchical synthesis. Dedicated block RAM (BRAM36) cells were inferred for the global systematic, parity, and extrinsic buffering arrays. DSP elements were explicitly constrained to avoid unnecessary inference, preserving slices for the arithmetic logic dominant ACS blocks. Extensive timing constraints and pipelining directives were employed around the radix-4 LLR computation tree to satisfy setup violations typical in complex signed-magnitude max-trees. 
+\section{Windowing Timing Waveforms}
+At 100 MHz, one clock cycle is 10 ns. With radix-4 processing, each computation consumes two trellis bits; hence a window of $M=30$ contains 15 radix-4 steps.
 
-\section{Results and Discussion}
+\subsection{Single-Window Radix-4 Timing}
+Fig.~\ref{fig:radix4_window_waveform} shows one complete window using \texttt{c0\_fr\_addr[11:0]}, \texttt{c0\_br\_addr[11:0]}, \texttt{c0\_dbr\_addr[11:0]}, and \texttt{c0\_llr\_req}. In steady state, FU computes $\alpha$ for $w_i$, BU computes $\beta$ for $w_{i-1}$, and DBU prepares $\beta$ for $w_{i+1}'$. The LLR request pulses once per radix-4 pair. Non-interleaved operation takes 5 cycles per pair, or 75 cycles per window. Interleaved operation adds one master-slave routing cycle, giving 6 cycles per pair, or 90 cycles per window; the QPP address and permutation rows show this routing overhead.
+
+\begin{figure*}[!t]
+\centerline{\includegraphics[width=\textwidth]{windowing_radix4_wavedrom.png}}
+\caption{Single-window radix-4 timing comparing non-interleaved and interleaved operation.}
+\label{fig:radix4_window_waveform}
+\end{figure*}
+
+\subsection{Two-SISO Boundary Window Flow}
+Fig.~\ref{fig:siso_window_schedule_waveform} compresses the first, middle, and last slots for C0/SISO1 and C1/SISO2. Each block is one complete window slot. The steady-state rule is FU=$w_i$, BU=$w_{i-1}$, and DBU=$w_{i+1}'$. Only the boundary slots differ: C1/SISO2 begins with a dummy-forward warm-up, C0/SISO1 uses DBU $w_{54}'$ to reach the C1 boundary, and the final SISO segment ends with the terminal BU condition.
+
+\begin{figure*}[!t]
+\centerline{\includegraphics[width=\textwidth]{window_schedule_c0_c1_wavedrom.png}}
+\caption{Two-SISO window schedule at the initial, steady-state, and final boundary slots.}
+\label{fig:siso_window_schedule_waveform}
+\end{figure*}
+
+\section{FPGA Implementation}
+The hardware description was captured using Verilog-2001 and mapped to the Xilinx Zynq-7010 (xc7z010clg400-1) target using the Vivado 2024.2 design suite. The RTL was structurally divided to allow hierarchical synthesis. Dedicated block RAM (BRAM36) cells were inferred for the global systematic, parity, and extrinsic buffering arrays. DSP elements were explicitly constrained to avoid unnecessary inference, preserving slices for the arithmetic logic dominant ACS blocks. Extensive timing constraints and pipelining directives were employed around the radix-4 LLR computation tree to satisfy setup violations typical in complex signed-magnitude max-trees. 
+
+\section{Results and Verification}
 
 \subsection{Resource Utilization}
-The post-implementation resource utilization for the parallel radix-4 decoder ($N=2$, $K=6144$) targeted for the Zynq-7010 FPGA is summarized in Table~\ref{tab:utilization}.
+The post-implementation resource utilization for the parallel radix-4 decoder ($N=2$, $K=3200$) targeted for the Zynq-7010 FPGA is summarized in Table~\ref{tab:utilization}.
 
 \begin{table}[htbp]
 \caption{Post-Implementation Resource Utilization (Zynq-7010)}
@@ -143,22 +164,63 @@ DSP & 4 & 80 & 5.00\% \\
 The utilization metrics reflect the dense combinatorial nature of the parallel ACS architectures. The total LUT consumption approaches an 80\% ceiling, signifying the logic limits of the Zynq-7010 chassis for highly parallel baseband IP. Internal data buffering accounts for the minimal LUTRAM instantiation.
 
 \subsection{Timing Performance}
-Static timing analysis reports indicate a critical path delay consisting of 24.89 ns. Consequently, the maximum reachable clock frequency ($F_{max}$) is 40.17 MHz. The design comfortably accommodates the specified target frequency operating period of 30.0 ns (33.33 MHz). The critical datapath restricts performance predominantly within the radix-4 $\gamma$-metric addition feeding the modulo-comparator array.
+The final post-route timing report meets all user-specified timing constraints at a 10 ns clock period. Debug-hub BSCAN/TCK paths were excluded from decoder-path interpretation because they belong to Vivado debug infrastructure. The filtered decoder timing is summarized in Table~\ref{tab:timing_summary}.
+
+\begin{table}[htbp]
+\caption{Filtered Timing Verification Summary}
+\begin{center}
+\scriptsize
+\begin{tabular}{@{}p{0.43\linewidth}p{0.50\linewidth}@{}}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Clock/status & 100 MHz, timing met \\
+Setup & WNS/TNS = 0.230/0 ns; 0 failing endpoints \\
+Hold & WHS/THS = 0.030/0 ns; 0 failing endpoints \\
+Pulse width & WPWS/TPWS = 3.750/0 ns; 0 failing endpoints \\
+Data paths & Setup: DBR ACS-to-ACS, 9.752 ns (3.761 logic + 5.991 route), 0.230 slack. Hold: LLR stage-to-stage, 0.417 ns (0.209 logic + 0.208 route), 0.030 slack. \\
+Min hold path & Shortest hold data path is FR alpha-write to alpha memory: 0.209 ns (0.141 logic + 0.068 route), 0.049 ns slack. \\
+I/O note & \texttt{btn[3:0]} and \texttt{led[3:0]} lack explicit I/O delays. \\
+\bottomrule
+\end{tabular}
+\label{tab:timing_summary}
+\end{center}
+\end{table}
 
 \subsection{Throughput}
-The decoding hardware throughput $T_{h}$ of the architecture can be extrapolated as a function of operating frequency $F_{clk}$, block length $K$, total decoding iterations $I$, and the algorithmic latency per half-iteration in clock cycles $C_{half}$:
+For the current block length $K=3200$, the throughput is computed from the measured cycle count $C$ as
 \begin{equation}
-T_h = \frac{K \times F_{clk}}{2 \times I \times C_{half}}
+T_h = \frac{K \times F_{clk}}{C}
 \end{equation}
 
-For the $N=2$ implementation, the number of windows per segment is $W = \lceil S / M \rceil = \lceil 3072 / 30 \rceil = 103$. With pipeline fill and drain periods accounted for, the cycle count per half-iteration evaluates to $C_{half} \approx 15 \times (103 + 2) = 1575$ clock cycles. Running at the derived $F_{max}$ of 40.17 MHz, over a standardized 5.5 iterations ($2 \times I = 11$ half-iterations):
-\begin{equation}
-T_h = \frac{6144 \times 40.17 \text{ MHz}}{11 \times 1575} \approx 14.24 \text{ Mbps}
-\end{equation}
-Operating at the constrained 30 ns period (33.33 MHz clock boundary), the baseline realization demonstrates a steady-state throughput of 11.83 Mbps.
+At 100 MHz, the 11-iteration non-interleaved latency of 7175 cycles gives 44.60 Mbps. The interleaved latency of 8015 cycles gives 39.93 Mbps. Including input loading, eight load phases of 802 cycles add 6416 cycles, giving end-to-end throughputs of 23.55 Mbps and 22.17 Mbps for non-interleaved and interleaved operation, respectively.
 
 \subsection{Latency}
-The decoding operational latency defines the end-to-end processing delay from memory load availability to final hard-decision projection. With iterative cycles $C_{total} = C_{half} \times 11$, total algorithmic cycles map to 17,325 clock periods. For an operational clock of 40.17 MHz, the absolute latency incurred totals 0.431 ms per contiguous block—securely within LTE payload latency ceilings for parallel HARQ processes.
+Table~\ref{tab:latency_breakdown} summarizes the measured latency terms at 100 MHz. The single-window latency is 75 cycles, consistent with 15 radix-4 steps at 5 cycles per step. The LLR computation path contributes 55 cycles within the window schedule. The master permutation path is 5 cycles and accounts for the interleaved routing overhead.
+
+\begin{table}[htbp]
+\caption{Latency Breakdown at 100 MHz}
+\begin{center}
+\footnotesize
+\begin{tabular}{@{}p{0.48\linewidth}cc@{}}
+\toprule
+\textbf{Operation} & \textbf{Cycles} & \textbf{Time} \\
+\midrule
+Radix-4 step & 5 & 50 ns \\
+Master permutation & 5 & 50 ns \\
+LLR computation path & 55 & 0.55 $\mu$s \\
+One window & 75 & 0.75 $\mu$s \\
+One input load & 802 & 8.02 $\mu$s \\
+Eight input loads & 6416 & 64.16 $\mu$s \\
+11 iterations, non-interleaved & 7175 & 71.75 $\mu$s \\
+11 iterations, interleaved & 8015 & 80.15 $\mu$s \\
+End-to-end, non-interleaved & 13591 & 135.91 $\mu$s \\
+End-to-end, interleaved & 14431 & 144.31 $\mu$s \\
+\bottomrule
+\end{tabular}
+\label{tab:latency_breakdown}
+\end{center}
+\end{table}
 
 \subsection{BER Performance Verification}
 The convergence capability and numerical scaling integrity inherently dictating the Max-Log-MAP fixed-point approximations were rigorously verified across standardized LTE configurations. The observed Bit Error Rate (BER) mapped as a function of the signal-to-noise ratio per bit (Eb/No) clearly exposes the targeted algorithmic cascade properties.
@@ -201,6 +263,7 @@ Table~\ref{tab:comparison} juxtaposes the baseline implementation results agains
 \begin{table}[htbp]
 \caption{Architecture Implementation Comparison}
 \begin{center}
+\footnotesize
 \begin{tabular}{|l|c|c|}
 \hline
 \textbf{Metric} & \textbf{This Work (FPGA)} & \textbf{Reference \cite{studer2011} (ASIC)} \\
@@ -211,9 +274,11 @@ Parallel Cores ($N$) & 2 & 8 \\
 \hline
 Window Protocol & $W=30$ Radix-4 & $W=30$ Radix-4 \\
 \hline
-Clock Freq. & 40.17 MHz & 302 MHz \\
+Clock & 100 MHz & 302 MHz \\
 \hline
-Throughput & 14.24 Mbps & 390.6 Mbps \\
+Decode Th. & 39.93 Mbps & 390.6 Mbps \\
+\hline
+End-to-end Th. & 22.17 Mbps & -- \\
 \hline
 \end{tabular}
 \label{tab:comparison}
@@ -221,14 +286,12 @@ Throughput & 14.24 Mbps & 390.6 Mbps \\
 \end{table}
 
 \subsection{Discussion}
-The significant discrepancy in aggregate throughput between the baseline implementation presented here (14.24 Mbps) and the reference architecture (390.6 Mbps) highlighted in Table~\ref{tab:comparison} is firmly a byproduct of structural technology node constraints and targeted parallelism, rather than algorithmic latency inefficiencies. 
+The throughput difference between this FPGA implementation and the reference ASIC is mainly due to the reduced parallelism and the target technology. This work uses $N=2$ SISO cores, whereas the reference architecture uses $N=8$. For $K=3200$, the interleaved decode phase reaches 39.93 Mbps at 100 MHz, while the end-to-end throughput including eight input-load phases is 22.17 Mbps.
 
-Firstly, scaling the parallel dimension severely drives throughput. The reference design natively institutes $N=8$ parallel SISO cores, effectively processing eight independent window segments concurrently. By contrast, this work strictly anchors at $N=2$ parallel cores to map compatibly within the 17,600 LUT logic limitation dictated by the constrained Zynq-7010 architecture. Expanding this exact architectural implementation proportionally up to $N=8$ on a larger equivalent FPGA fabric would yield an immediate $4 \times$ multiplicative scaling factor directly to the baseline throughput calculation.
-
-Secondly, the physical operating platform categorically throttles cycle transition structures. The reference model reaches a staggering 302 MHz precisely by exploiting standard cell custom routing boundaries and timing models innate to a dedicated 0.13 $\mu$m CMOS ASIC process. General-purpose FPGAs, such as the Zynq-7010, are severely slowed by generalized routing interconnection matrices separating CLB structures. When computationally dense mathematical formations like 6-comparator ACS operations and dense QPP LUT arrays are forcefully decomposed into fundamental 6-LUT logic slices, routing propagation delay aggressively limits $F_{max}$ to approximately 40 MHz. Adjusting the throughput projection of this design (at $N=8$) to ASIC-equivalent frequency scales analytically yields a theoretical throughput traversing $\sim$427 Mbps, verifying absolute parity in algorithmic cycle efficiency with the original reference framework.
+The routed design meets the 100 MHz constraint with 0.230 ns setup WNS and no hold violation. The limiting decoder path remains the DBR ACS-to-ACS chain, where routing delay dominates logic delay.
 
 \section{Conclusion}
-This paper delineated the methodical reproduction and optimization mapping of an LTE parallel radix-4 turbo decoding core targeting Xilinx FPGA geometries. Incorporating a dual-SISO M-BCJR implementation equipped with folded conflict-free addressing bounds, the architectural construct operates deterministically, verifying pipeline structural integrity under severe temporal iteration loads. Hardware reporting reveals successful target containment onto the highly restricted Zynq-7010 fabric, scoring a 40.17 MHz frequency mark processing up to 14.24 Mbps natively. The foundational mapping substantiates critical optimizations moving forward, driving dynamic ACS collapsing and LUT scaling to propel scalable higher-order multi-SISO frameworks required for definitive LTE throughput standards.
+This paper presented a dual-SISO radix-4 M-BCJR turbo decoder for $K=3200$ on the Zynq-7010 FPGA. The design meets the 100 MHz clock target and achieves 39.93 Mbps interleaved decode throughput, or 22.17 Mbps end-to-end throughput when input loading is included. The measured latency breakdown confirms the expected 75-cycle window schedule and the additional interleaver routing cost. Further speed improvement should focus on the radix-4 ACS datapath and high-fanout interleaver control logic.
 
 \begin{thebibliography}{00}
 \bibitem{studer2011}

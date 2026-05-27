@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+node_modules/
 
 # LaTeX/editor/generated scratch
 *.aux
@@ -13,6 +14,7 @@ __pycache__/
 build/
 *.vcd
 *.vvp
+xsim.dir/
 
 # Vivado local/generated outputs
 .Xil/
